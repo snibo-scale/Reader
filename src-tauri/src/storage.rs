@@ -69,6 +69,19 @@ pub struct ChatSession {
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct Reference {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub authors: String,
+    #[serde(default)]
+    pub year: String,
+    #[serde(default)]
+    pub arxiv_id: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Paper {
     pub id: String,
     pub title: String,
@@ -90,6 +103,8 @@ pub struct Paper {
     pub source_key: Option<String>,
     #[serde(default)]
     pub index: Option<IndexCard>,
+    #[serde(default)]
+    pub references: Option<Vec<Reference>>,
     #[serde(default)]
     pub highlights: Vec<Highlight>,
     /// Legacy single conversation; migrated into `sessions` on load.
@@ -163,7 +178,14 @@ const COLORS: &[&str] = &[
 pub fn list_papers(state: State<'_, Mutex<Library>>) -> Vec<Paper> {
     let lib = state.lock().unwrap();
     let mut v = lib.papers.clone();
-    v.sort_by(|a, b| b.added_at.cmp(&a.added_at));
+    // Most-recent activity first: last opened, falling back to date added.
+    let recency = |p: &Paper| -> String {
+        match &p.last_opened_at {
+            Some(o) if *o > p.added_at => o.clone(),
+            _ => p.added_at.clone(),
+        }
+    };
+    v.sort_by(|a, b| recency(b).cmp(&recency(a)));
     v
 }
 
@@ -201,6 +223,7 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
         highlights: vec![],
         chat: vec![],
         sessions: vec![],
+        references: None,
     };
     lib.papers.push(paper.clone());
     lib.save();
@@ -358,6 +381,7 @@ WHERE i.deleted_at IS NULL;";
             highlights: vec![],
             chat: vec![],
             sessions: vec![],
+            references: None,
         };
         keys.insert(key);
         titles.insert(ntitle);
@@ -459,6 +483,7 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         highlights: vec![],
         chat: vec![],
         sessions: vec![],
+        references: None,
     };
     lib.papers.push(paper.clone());
     lib.save();

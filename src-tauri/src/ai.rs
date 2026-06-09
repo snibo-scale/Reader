@@ -184,6 +184,31 @@ pub async fn suggest_queries(
     run_collect(&provider, build_queries_prompt(&context), model.as_deref()).await
 }
 
+fn build_refs_prompt(text: &str) -> String {
+    let snippet: String = text.chars().take(45_000).collect();
+    format!(
+        "The text below is the end of an academic paper, including its \
+References / Bibliography. Extract the cited works. Respond with ONLY a JSON array, \
+each item exactly this shape:\n\
+{{\"title\":\"\",\"authors\":\"\",\"year\":\"\",\"arxivId\":\"\"}}\n\
+- title: the cited paper's title.\n\
+- authors: first author et al. (short).\n\
+- year: 4-digit year if present.\n\
+- arxivId: the arXiv id (e.g. 2401.01234) ONLY if explicitly present in the text, else \"\".\n\
+Include up to 40 of the most clearly identifiable references. No commentary, no markdown.\n\n\
+TEXT:\n{snippet}\n"
+    )
+}
+
+#[tauri::command]
+pub async fn extract_references(
+    text: String,
+    provider: String,
+    model: Option<String>,
+) -> Result<String, String> {
+    run_collect(&provider, build_refs_prompt(&text), model.as_deref()).await
+}
+
 #[tauri::command]
 pub async fn ask_ai(request: AskRequest, on_event: Channel<AiEvent>) -> Result<(), String> {
     let full = build_prompt(&request.context, &request.prompt);

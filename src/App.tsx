@@ -9,12 +9,12 @@ import {
   listPapers,
   updatePaper,
 } from "./lib/api";
-import { buildIndex, needsIndexing } from "./lib/indexer";
+import { buildIndex, needsWork } from "./lib/indexer";
 import { getModel, getProvider } from "./lib/settings";
 import Sidebar, { type View } from "./components/Sidebar";
 import Library from "./components/Library";
 import Reader from "./components/Reader";
-import Discover from "./components/Discover";
+import Discover, { type DiscoverCache } from "./components/Discover";
 import GraphCanvas from "./components/GraphCanvas";
 import SearchView from "./components/SearchView";
 import Timeline from "./components/Timeline";
@@ -27,14 +27,65 @@ export default function App() {
   const [view, setView] = useState<View>("library");
   const [category, setCategory] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(true);
+  const [discoverCache, setDiscoverCache] = useState<DiscoverCache | null>(null);
   const [importing, setImporting] = useState(false);
   const [importNote, setImportNote] = useState<string | null>(null);
   const [indexProgress, setIndexProgress] = useState<{ done: number; total: number } | null>(null);
+  const [indexingIds, setIndexingIds] = useState<Set<string>>(new Set());
   const importedOnce = useRef(false);
+  const indexingRef = useRef<Set<string>>(new Set());
+  const pendingWindowPaper = useRef<string | null>(
+    new URLSearchParams(window.location.search).get("paper")
+  );
 
   const refresh = useCallback(async () => {
     setPapers(await listPapers());
   }, []);
+
+  // Merge an indexing result onto the latest paper (preserving highlights/notes/
+  // sessions that may have changed while indexing ran), then persist.
+  const applyIndexResult = useCallback((id: string, u: Paper) => {
+    let merged: Paper | null = null;
+    setPapers((list) =>
+      list.map((p) => {
+        if (p.id !== id) return p;
+        merged = {
+          ...p,
+          title: u.title,
+          year: u.year,
+          authors: u.authors,
+          metadataExtracted: u.metadataExtracted,
+          index: u.index,
+          references: u.references,
+        };
+        return merged;
+      })
+    );
+    if (merged) updatePaper(merged);
+  }, []);
+
+  // Index a paper in the BACKGROUND (App stays mounted) so it keeps running and
+  // persists even if the reader is exited. Triggered on add and on open; runs once
+  // per paper and only the steps that are missing.
+  const ensureIndexed = useCallback(
+    (paper: Paper) => {
+      if (!needsWork(paper) || indexingRef.current.has(paper.id)) return;
+      indexingRef.current.add(paper.id);
+      setIndexingIds(new Set(indexingRef.current));
+      buildIndex(paper, getProvider(), getModel())
+        .then((u) => {
+          if (u) applyIndexResult(paper.id, u);
+        })
+        .catch(() => {
+          /* retry next open */
+        })
+        .finally(() => {
+          indexingRef.current.delete(paper.id);
+          setIndexingIds(new Set(indexingRef.current));
+        });
+    },
+    [applyIndexResult]
+  );
 
   // On launch: pull in anything from the un.ms Research app (idempotent / de-duped).
   useEffect(() => {
@@ -62,10 +113,11 @@ export default function App() {
     try {
       const paper = await importPaper(selected);
       setPapers((prev) => [paper, ...prev]);
+      ensureIndexed(paper);
     } finally {
       setImporting(false);
     }
-  }, []);
+  }, [ensureIndexed]);
 
   const handleImportUrl = useCallback(async (url: string) => {
     if (!url.trim()) return;
@@ -74,12 +126,13 @@ export default function App() {
       const paper = await importFromUrl(url.trim());
       setPapers((prev) => [paper, ...prev]);
       setImportNote(`Added "${paper.title}"`);
+      ensureIndexed(paper);
     } catch (e) {
       setImportNote(String(e));
     } finally {
       setImporting(false);
     }
-  }, []);
+  }, [ensureIndexed]);
 
   const handleResearchImport = useCallback(async () => {
     setImporting(true);
@@ -105,7 +158,7 @@ export default function App() {
 
   // Index every un-indexed paper, one at a time, in the background.
   const handleIndexAll = useCallback(async () => {
-    const todo = papers.filter(needsIndexing);
+    const todo = papers.filter(needsWork);
     if (todo.length === 0) {
       setImportNote("All papers are already indexed");
       return;
@@ -130,8 +183,47 @@ export default function App() {
     setActiveId((cur) => (cur === id ? null : cur));
   }, []);
 
-  const openPaper = useCallback((id: string) => {
-    setActiveId(id);
+  const openPaper = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      const now = new Date().toISOString();
+      let updated: Paper | null = null;
+      setPapers((list) => list.map((p) => (p.id === id ? (updated = { ...p, lastOpenedAt: now }) : p)));
+      if (updated) {
+        updatePaper(updated);
+        ensureIndexed(updated); // continue/start background indexing (survives exit)
+      }
+    },
+    [ensureIndexed]
+  );
+
+  // If launched as a dedicated paper window (?paper=ID), open it once loaded.
+  useEffect(() => {
+    const id = pendingWindowPaper.current;
+    if (id && papers.some((p) => p.id === id)) {
+      pendingWindowPaper.current = null;
+      openPaper(id);
+    }
+  }, [papers, openPaper]);
+
+  const handleImported = useCallback(
+    (paper: Paper) => {
+      setPapers((prev) => (prev.some((p) => p.id === paper.id) ? prev : [paper, ...prev]));
+      ensureIndexed(paper);
+    },
+    [ensureIndexed]
+  );
+
+  const handleUpdateNote = useCallback((paperId: string, highlightId: string, note: string) => {
+    let updated: Paper | null = null;
+    setPapers((list) =>
+      list.map((p) => {
+        if (p.id !== paperId) return p;
+        updated = { ...p, highlights: p.highlights.map((h) => (h.id === highlightId ? { ...h, note } : h)) };
+        return updated;
+      })
+    );
+    if (updated) updatePaper(updated);
   }, []);
 
   const navigate = useCallback((v: View) => {
@@ -155,21 +247,31 @@ export default function App() {
         key={active.id}
         paper={active}
         papers={papers}
+        indexing={indexingIds.has(active.id)}
         onBack={() => setActiveId(null)}
         onChange={handleUpdate}
         onOpenPaper={openPaper}
+        onImported={handleImported}
       />
     );
   } else if (view === "search") {
     main = <SearchView papers={papers} onOpen={openPaper} />;
   } else if (view === "discover") {
-    main = <Discover papers={papers} />;
+    main = (
+      <Discover
+        papers={papers}
+        cache={discoverCache}
+        onCache={setDiscoverCache}
+        onImported={handleImported}
+        onOpen={openPaper}
+      />
+    );
   } else if (view === "canvas") {
     main = <GraphCanvas papers={papers} onOpen={openPaper} />;
   } else if (view === "timeline") {
     main = <Timeline papers={papers} onOpen={openPaper} />;
   } else if (view === "highlights") {
-    main = <Highlights papers={papers} onOpen={openPaper} />;
+    main = <Highlights papers={papers} onOpen={openPaper} onUpdateNote={handleUpdateNote} />;
   } else if (view === "settings") {
     main = <SettingsView papers={papers} />;
   } else {

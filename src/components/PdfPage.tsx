@@ -2,7 +2,27 @@ import { memo, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { pdfjsLib } from "../lib/pdf";
 import type { Tint } from "../lib/tints";
-import type { Highlight } from "../types";
+import type { Highlight, Rect } from "../types";
+
+// Merge per-line / overlapping client-rects into one clean band per line, so
+// highlights render as continuous marker strokes instead of ragged stacked boxes.
+function mergeRects(rects: Rect[]): Rect[] {
+  const sorted = [...rects].sort((a, b) => a.y - b.y || a.x - b.x);
+  const out: Rect[] = [];
+  for (const r of sorted) {
+    const last = out[out.length - 1];
+    if (last && Math.abs(r.y - last.y) < last.h * 0.6 && r.x <= last.x + last.w + 0.01) {
+      const right = Math.max(last.x + last.w, r.x + r.w);
+      last.x = Math.min(last.x, r.x);
+      last.w = right - last.x;
+      last.y = Math.min(last.y, r.y);
+      last.h = Math.max(last.h, r.h);
+    } else {
+      out.push({ ...r });
+    }
+  }
+  return out;
+}
 
 interface Props {
   doc: PDFDocumentProxy;
@@ -10,7 +30,7 @@ interface Props {
   scale: number;
   tint: Tint;
   highlights: Highlight[];
-  onRemoveHighlight: (id: string) => void;
+  onSelectHighlight: (id: string, rect: DOMRect) => void;
   estimateW: number;
   estimateH: number;
   scrollRef: { current: HTMLElement | null };
@@ -22,7 +42,7 @@ function PdfPage({
   scale,
   tint,
   highlights,
-  onRemoveHighlight,
+  onSelectHighlight,
   estimateW,
   estimateH,
   scrollRef,
@@ -129,19 +149,18 @@ function PdfPage({
       <div className="hl-layer">
         {visible &&
           highlights.flatMap((h) =>
-            h.rects.map((r, idx) => (
+            mergeRects(h.rects).map((r, idx) => (
               <div
                 key={`${h.id}-${idx}`}
-                className="hl"
-                title={h.note ? h.note : "Click to remove highlight"}
+                className={"hl" + (h.note ? " has-note" : "")}
+                title={h.note ? h.note : "Click to add a note"}
                 style={{
                   left: `${r.x * 100}%`,
                   top: `${r.y * 100}%`,
                   width: `${r.w * 100}%`,
                   height: `${r.h * 100}%`,
-                  background: h.color,
                 }}
-                onClick={() => onRemoveHighlight(h.id)}
+                onClick={(e) => onSelectHighlight(h.id, (e.currentTarget as HTMLElement).getBoundingClientRect())}
               />
             ))
           )}

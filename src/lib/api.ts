@@ -12,6 +12,9 @@ export const analyzePaper = (text: string, provider: Provider, model: string | n
 export const suggestQueries = (context: string, provider: Provider, model: string | null = null) =>
   invoke<string>("suggest_queries", { context, provider, model });
 
+export const extractReferences = (text: string, provider: Provider, model: string | null = null) =>
+  invoke<string>("extract_references", { text, provider, model });
+
 export interface ArxivPaper {
   id: string;
   title: string;

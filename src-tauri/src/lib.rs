@@ -32,6 +32,7 @@ pub fn run() {
             ai::ask_ai,
             ai::analyze_paper,
             ai::suggest_queries,
+            ai::extract_references,
             arxiv::arxiv_search,
         ])
         .run(tauri::generate_context!())

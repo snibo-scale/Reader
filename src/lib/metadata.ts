@@ -40,6 +40,30 @@ export function parseAnalysis(raw: string): Analysis | null {
   }
 }
 
+import type { Reference } from "../types";
+export type { Reference };
+
+/** Parse a JSON array of references from an LLM response. */
+export function parseReferences(raw: string): Reference[] {
+  const start = raw.indexOf("[");
+  const end = raw.lastIndexOf("]");
+  if (start === -1 || end === -1 || end < start) return [];
+  try {
+    const arr = JSON.parse(raw.slice(start, end + 1));
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((o: Record<string, unknown>) => ({
+        title: String(o.title ?? "").trim(),
+        authors: String(o.authors ?? "").trim(),
+        year: o.year != null ? String(o.year).trim() : "",
+        arxivId: String(o.arxivId ?? "").trim(),
+      }))
+      .filter((r) => r.title.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 /** Parse a JSON array of strings from an LLM response (with light fallbacks). */
 export function parseStringArray(raw: string): string[] {
   const start = raw.indexOf("[");

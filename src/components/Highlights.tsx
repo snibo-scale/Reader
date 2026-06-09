@@ -1,13 +1,31 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Paper } from "../types";
 import { tagDotColor } from "../lib/colors";
+import Presentation, { type Slide } from "./Presentation";
 
-export default function Highlights({ papers, onOpen }: { papers: Paper[]; onOpen: (id: string) => void }) {
+interface Props {
+  papers: Paper[];
+  onOpen: (id: string) => void;
+  onUpdateNote: (paperId: string, highlightId: string, note: string) => void;
+}
+
+export default function Highlights({ papers, onOpen, onUpdateNote }: Props) {
+  const [presenting, setPresenting] = useState(false);
   const withHl = useMemo(
     () => papers.filter((p) => p.highlights.length > 0).sort((a, b) => b.highlights.length - a.highlights.length),
     [papers]
   );
   const total = withHl.reduce((n, p) => n + p.highlights.length, 0);
+
+  const slides: Slide[] = useMemo(
+    () =>
+      withHl.flatMap((p) =>
+        [...p.highlights]
+          .sort((a, b) => a.page - b.page)
+          .map((h) => ({ paperId: p.id, paperTitle: p.title, highlight: h }))
+      ),
+    [withHl]
+  );
 
   return (
     <div className="highlights">
@@ -15,6 +33,9 @@ export default function Highlights({ papers, onOpen }: { papers: Paper[]; onOpen
         <div className="crumbs">
           <strong>Highlights</strong> <span className="sep">/</span> {total} across {withHl.length} papers
         </div>
+        <button className="ghost-btn" onClick={() => setPresenting(true)} disabled={total === 0}>
+          ▶ Present
+        </button>
       </header>
 
       {withHl.length === 0 ? (
@@ -29,10 +50,7 @@ export default function Highlights({ papers, onOpen }: { papers: Paper[]; onOpen
             return (
               <section key={p.id} className="hl-group">
                 <button className="hl-paper" onClick={() => onOpen(p.id)}>
-                  <span
-                    className="dot"
-                    style={{ background: topic ? tagDotColor(topic) : "var(--base-300)" }}
-                  />
+                  <span className="dot" style={{ background: topic ? tagDotColor(topic) : "var(--base-300)" }} />
                   {p.title}
                   <span className="count">{p.highlights.length}</span>
                 </button>
@@ -50,6 +68,10 @@ export default function Highlights({ papers, onOpen }: { papers: Paper[]; onOpen
             );
           })}
         </div>
+      )}
+
+      {presenting && (
+        <Presentation slides={slides} onClose={() => setPresenting(false)} onUpdateNote={onUpdateNote} />
       )}
     </div>
   );

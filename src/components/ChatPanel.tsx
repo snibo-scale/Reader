@@ -76,12 +76,20 @@ export default function ChatPanel({ paper, paperText, seedContext, onConsumeSeed
     setBusy(true);
     setStreaming("");
 
+    // When asking about a highlighted selection, quote it directly in the prompt
+    // so the model clearly answers about that passage (not just the paper at large).
+    const question = ctx
+      ? `Regarding this highlighted passage from the paper:\n"""\n${ctx}\n"""\n\n${q}`
+      : q;
+
     // Resume continuity: include the recent transcript so the model keeps context.
     const transcript = history
       .slice(-8)
       .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
       .join("\n\n");
-    const prompt = transcript ? `Continue this conversation about the paper.\n\n${transcript}\n\nUser: ${q}` : q;
+    const prompt = transcript
+      ? `Continue this conversation about the paper.\n\n${transcript}\n\nUser: ${question}`
+      : question;
 
     let acc = "";
     try {

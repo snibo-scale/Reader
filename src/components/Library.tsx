@@ -1,9 +1,10 @@
 import { useState } from "react";
 import type { Paper } from "../types";
-import { needsIndexing } from "../lib/indexer";
+import { needsWork } from "../lib/indexer";
 import { paperInCategory } from "../lib/connections";
 import { tagTint } from "../lib/colors";
 import { formatAuthors } from "../lib/util";
+import { openPaperWindow } from "../lib/window";
 
 interface CardProps {
   paper: Paper;
@@ -18,7 +19,6 @@ function PaperCard({ paper, onOpen, onDelete }: CardProps) {
     <div className="card" style={{ background }} onClick={() => onOpen(paper.id)}>
       <div className="card-top">
         <span className="badge">{paper.year || "—"}</span>
-        <span className="card-cat">{paper.category}</span>
       </div>
       <div className="card-title">{paper.title}</div>
       <div className="card-author">{formatAuthors(paper.authors)}</div>
@@ -26,16 +26,28 @@ function PaperCard({ paper, onOpen, onDelete }: CardProps) {
         <span className="hl-count" title="Highlights">
           ◍ {paper.highlights.length}
         </span>
-        <button
-          className="card-del"
-          title="Delete"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (confirm(`Delete "${paper.title}"? This removes the stored PDF.`)) onDelete(paper.id);
-          }}
-        >
-          ✕
-        </button>
+        <div className="card-actions">
+          <button
+            className="card-win"
+            title="Open in new window"
+            onClick={(e) => {
+              e.stopPropagation();
+              openPaperWindow(paper.id, paper.title);
+            }}
+          >
+            ⧉
+          </button>
+          <button
+            className="card-del"
+            title="Delete"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm(`Delete "${paper.title}"? This removes the stored PDF.`)) onDelete(paper.id);
+            }}
+          >
+            ✕
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -72,7 +84,7 @@ export default function Library({
 }: Props) {
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
-  const unindexed = papers.filter(needsIndexing).length;
+  const unindexed = papers.filter(needsWork).length;
   const indexing = indexProgress !== null;
   const submitUrl = () => {
     if (!url.trim()) return;
@@ -80,7 +92,14 @@ export default function Library({
     setUrl("");
     setUrlOpen(false);
   };
-  const shown = activeCategory ? papers.filter((p) => paperInCategory(p, activeCategory)) : papers;
+  // Most-recent activity = last opened, falling back to date added (ISO sorts chronologically).
+  const recency = (p: Paper) => {
+    const added = p.addedAt ?? "";
+    const opened = p.lastOpenedAt ?? "";
+    return opened > added ? opened : added;
+  };
+  const sorted = [...papers].sort((a, b) => recency(b).localeCompare(recency(a)));
+  const shown = activeCategory ? sorted.filter((p) => paperInCategory(p, activeCategory)) : sorted;
   return (
     <div className="library">
       <header className="lib-header">

@@ -1,4 +1,5 @@
 import type { Paper } from "../types";
+import Logo from "./Logo";
 
 export type View = "library" | "search" | "discover" | "canvas" | "timeline" | "highlights" | "settings";
 
@@ -19,6 +20,7 @@ export default function Sidebar({ view, inReader, activeCategory, collapsed, onT
   if (collapsed) {
     return (
       <aside className="sidebar collapsed">
+        <Logo size={24} />
         <button className="nav-toggle" onClick={onToggle} title="Show sidebar">
           »
         </button>
@@ -35,9 +37,15 @@ export default function Sidebar({ view, inReader, activeCategory, collapsed, onT
   return (
     <aside className="sidebar">
       <div className="sidebar-top">
-        <button className="nav-toggle" onClick={onToggle} title="Hide sidebar">
-          «
-        </button>
+        <div className="sidebar-header">
+          <div className="sidebar-brand">
+            <Logo size={24} />
+            <span className="brand-name">Reader</span>
+          </div>
+          <button className="nav-toggle" onClick={onToggle} title="Hide sidebar">
+            «
+          </button>
+        </div>
         <nav className="nav-top">
           {item("library", "Recent", inLibrary && !activeCategory)}
           {item("search", "Search", !inReader && view === "search")}

@@ -1,8 +1,8 @@
 import type { Analysis } from "./metadata";
 import type { Paper, Provider } from "../types";
-import { analyzePaper, readPdfBytes } from "./api";
-import { extractText, loadPdf } from "./pdf";
-import { parseAnalysis } from "./metadata";
+import { analyzePaper, extractReferences, readPdfBytes } from "./api";
+import { extractTailText, extractText, loadPdf } from "./pdf";
+import { parseAnalysis, parseReferences } from "./metadata";
 import { canonicalTag } from "./canonical";
 
 /** Merge an LLM analysis into a paper (metadata + index card). */
@@ -25,22 +25,62 @@ export function applyAnalysis(paper: Paper, a: Analysis): Paper {
   };
 }
 
-/** Full pipeline for indexing a paper from disk (used by the bulk indexer). */
+/** A paper needs indexing if it has no index yet, or only a keyword seed. */
+export function needsIndexing(p: Paper): boolean {
+  return !p.index || p.index.topics.length === 0;
+}
+
+/** References haven't been extracted yet (null/undefined; [] means "extracted, none"). */
+export function needsReferences(p: Paper): boolean {
+  return p.references == null;
+}
+
+/** A paper needs any LLM indexing work (analysis and/or references). */
+export function needsWork(p: Paper): boolean {
+  return needsIndexing(p) || needsReferences(p);
+}
+
+/**
+ * Index a paper from disk: run ONLY the steps that haven't been done yet
+ * (analysis and/or reference extraction), persisting both. Never re-runs a call
+ * whose result is already stored. Returns the updated paper, or null if nothing
+ * changed / failed.
+ */
 export async function buildIndex(
   paper: Paper,
   provider: Provider = "claude",
   model: string | null = null
 ): Promise<Paper | null> {
+  if (!needsWork(paper)) return null;
   const bytes = await readPdfBytes(paper.id);
   const doc = await loadPdf(bytes);
-  const text = await extractText(doc);
-  if (!text.trim()) return null;
-  const raw = await analyzePaper(text, provider, model);
-  const a = parseAnalysis(raw);
-  return a ? applyAnalysis(paper, a) : null;
-}
+  let next = paper;
+  let changed = false;
 
-/** A paper needs indexing if it has no index yet, or only a keyword seed. */
-export function needsIndexing(p: Paper): boolean {
-  return !p.index || p.index.topics.length === 0;
+  if (needsIndexing(next)) {
+    try {
+      const text = await extractText(doc);
+      if (text.trim()) {
+        const a = parseAnalysis(await analyzePaper(text, provider, model));
+        if (a) {
+          next = applyAnalysis(next, a);
+          changed = true;
+        }
+      }
+    } catch {
+      /* leave unindexed; retry next time */
+    }
+  }
+
+  if (needsReferences(next)) {
+    try {
+      const tail = await extractTailText(doc);
+      next = { ...next, references: parseReferences(await extractReferences(tail, provider, model)) };
+      changed = true;
+    } catch {
+      /* leave references unset; retry next time */
+    }
+  }
+
+  return changed ? next : null;
 }

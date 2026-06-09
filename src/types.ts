@@ -31,6 +31,13 @@ export interface ChatSession {
   messages: ChatMessage[];
 }
 
+export interface Reference {
+  title: string;
+  authors: string;
+  year: string;
+  arxivId: string;
+}
+
 export interface IndexCard {
   summary: string;
   topics: string[];
@@ -55,6 +62,8 @@ export interface Paper {
   metadataExtracted?: boolean;
   sourceKey?: string | null;
   index?: IndexCard | null;
+  /** Extracted references; undefined = not yet extracted, [] = extracted, none found. */
+  references?: Reference[] | null;
   highlights: Highlight[];
   /** Legacy single conversation, migrated into sessions on load. */
   chat?: ChatMessage[];

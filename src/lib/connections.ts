@@ -60,6 +60,21 @@ export function relatedPapers(paperId: string, papers: Paper[], limit = 5): { pa
     .slice(0, limit);
 }
 
+/** Library papers whose canonical tags appear in some text (e.g. a recommendation). */
+export function similarInLibrary(text: string, papers: Paper[], limit = 3): { paper: Paper; score: number }[] {
+  const hay = text.toLowerCase();
+  return papers
+    .filter((p) => p.index)
+    .map((p) => {
+      let score = 0;
+      for (const t of paperTags(p)) if (t.length > 3 && hay.includes(t)) score++;
+      return { paper: p, score };
+    })
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
 /** Topics across the library rolled into categories (case-insensitive), by frequency. */
 export function topicCategories(papers: Paper[]): { name: string; count: number }[] {
   const counts = new Map<string, number>();
