@@ -1,0 +1,9 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="224" fill="#100F0F"/>
+  <text x="512" y="512" text-anchor="middle" dominant-baseline="central"
+        font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="620"
+        font-weight="700" fill="#FFFCF0">R</text>
+  <circle cx="690" cy="700" r="46" fill="#66800B"/>
+  <circle cx="784" cy="612" r="30" fill="#D0A215"/>
+  <line x1="690" y1="700" x2="784" y2="612" stroke="#6F6E69" stroke-width="12" stroke-linecap="round"/>
+</svg>

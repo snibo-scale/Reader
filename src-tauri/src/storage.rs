@@ -1,0 +1,503 @@
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
+use tauri::ipc::Response;
+use tauri::State;
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Highlight {
+    pub id: String,
+    pub page: u32,
+    pub text: String,
+    pub rects: Vec<Rect>,
+    pub color: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexCard {
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub topics: Vec<String>,
+    #[serde(default)]
+    pub methods: Vec<String>,
+    #[serde(default)]
+    pub keywords: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub contributions: Vec<String>,
+    #[serde(default)]
+    pub indexed_at: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub model: String,
+    pub created_at: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSession {
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(default)]
+    pub messages: Vec<ChatMessage>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Paper {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub authors: Option<String>,
+    #[serde(default)]
+    pub year: Option<String>,
+    pub category: String,
+    pub color: String,
+    pub file_name: String,
+    pub added_at: String,
+    #[serde(default)]
+    pub last_opened_at: Option<String>,
+    #[serde(default)]
+    pub progress: Option<f64>,
+    #[serde(default)]
+    pub metadata_extracted: bool,
+    #[serde(default)]
+    pub source_key: Option<String>,
+    #[serde(default)]
+    pub index: Option<IndexCard>,
+    #[serde(default)]
+    pub highlights: Vec<Highlight>,
+    /// Legacy single conversation; migrated into `sessions` on load.
+    #[serde(default)]
+    pub chat: Vec<ChatMessage>,
+    #[serde(default)]
+    pub sessions: Vec<ChatSession>,
+}
+
+fn legacy_session_name(msgs: &[ChatMessage]) -> String {
+    let first = msgs
+        .iter()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.as_str())
+        .unwrap_or("Earlier conversation");
+    let title = first.split_whitespace().take(7).collect::<Vec<_>>().join(" ");
+    let title = if title.chars().count() > 46 {
+        format!("{}…", title.chars().take(46).collect::<String>())
+    } else {
+        title
+    };
+    if title.is_empty() { "Earlier conversation".into() } else { title }
+}
+
+pub struct Library {
+    dir: PathBuf,
+    papers: Vec<Paper>,
+}
+
+impl Library {
+    pub fn load(dir: PathBuf) -> Self {
+        let file = dir.join("library.json");
+        let mut papers = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|s| serde_json::from_str::<Vec<Paper>>(&s).ok())
+            .unwrap_or_default();
+        // Migrate any legacy single `chat` into a named session.
+        for p in papers.iter_mut() {
+            if p.sessions.is_empty() && !p.chat.is_empty() {
+                let created = p.chat.first().map(|m| m.created_at.clone()).unwrap_or_default();
+                let updated = p.chat.last().map(|m| m.created_at.clone()).unwrap_or_else(|| created.clone());
+                let name = legacy_session_name(&p.chat);
+                p.sessions.push(ChatSession {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    name,
+                    created_at: created,
+                    updated_at: updated,
+                    messages: std::mem::take(&mut p.chat),
+                });
+            }
+        }
+        Library { dir, papers }
+    }
+
+    fn save(&self) {
+        if let Ok(s) = serde_json::to_string_pretty(&self.papers) {
+            let _ = std::fs::write(self.dir.join("library.json"), s);
+        }
+    }
+
+    fn papers_dir(&self) -> PathBuf {
+        self.dir.join("papers")
+    }
+}
+
+const COLORS: &[&str] = &[
+    "#dfeede", "#e9e2f5", "#f6e3d2", "#e3e9f6", "#f6e3e3", "#e3f0f6", "#efeede", "#e6e6e6",
+];
+
+#[tauri::command]
+pub fn list_papers(state: State<'_, Mutex<Library>>) -> Vec<Paper> {
+    let lib = state.lock().unwrap();
+    let mut v = lib.papers.clone();
+    v.sort_by(|a, b| b.added_at.cmp(&a.added_at));
+    v
+}
+
+#[tauri::command]
+pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Paper, String> {
+    let src = PathBuf::from(&path);
+    let stem = src
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Untitled")
+        .to_string();
+    let id = uuid::Uuid::new_v4().to_string();
+    let file_name = format!("{id}.pdf");
+
+    let mut lib = state.lock().unwrap();
+    let papers_dir = lib.papers_dir();
+    std::fs::create_dir_all(&papers_dir).map_err(|e| e.to_string())?;
+    std::fs::copy(&src, papers_dir.join(&file_name)).map_err(|e| format!("copy failed: {e}"))?;
+
+    let color = COLORS[lib.papers.len() % COLORS.len()].to_string();
+    let paper = Paper {
+        id,
+        title: stem,
+        authors: None,
+        year: None,
+        category: "Uncategorized".into(),
+        color,
+        file_name,
+        added_at: chrono::Utc::now().to_rfc3339(),
+        last_opened_at: None,
+        progress: None,
+        metadata_extracted: false,
+        source_key: None,
+        index: None,
+        highlights: vec![],
+        chat: vec![],
+        sessions: vec![],
+    };
+    lib.papers.push(paper.clone());
+    lib.save();
+    Ok(paper)
+}
+
+#[derive(serde::Deserialize)]
+struct ResearchRow {
+    title: Option<String>,
+    year: Option<String>,
+    keywords: Option<String>,
+    ai_summary: Option<String>,
+    file_path: Option<String>,
+    authors: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    pub imported: usize,
+    pub skipped: usize,
+    pub total: usize,
+}
+
+fn normalize_title(s: &str) -> String {
+    s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase()
+}
+
+/// arXiv-style filename "2304.07193v2" -> dedupe key "2304.07193" (version stripped).
+fn derive_source_key(file_path: &str) -> String {
+    let stem = std::path::Path::new(file_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if let Some(pos) = stem.rfind('v') {
+        if pos > 0 && pos + 1 < stem.len() && stem[pos + 1..].chars().all(|c| c.is_ascii_digit()) {
+            return stem[..pos].to_string();
+        }
+    }
+    stem
+}
+
+/// Import papers from the un.ms "Research" app, de-duplicating by arXiv id / title.
+/// Reads the app's SQLite store via the `sqlite3` CLI (no extra Rust dependency).
+#[tauri::command]
+pub fn import_from_research(state: State<'_, Mutex<Library>>) -> Result<ImportResult, String> {
+    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("no home dir")?;
+    let db = home.join("Library/Application Support/research.un.ms/data.db");
+    if !db.exists() {
+        return Err("Research (un.ms) data not found on this machine".into());
+    }
+    let sqlite = if std::path::Path::new("/usr/bin/sqlite3").exists() {
+        "/usr/bin/sqlite3"
+    } else {
+        "sqlite3"
+    };
+    let query = "SELECT i.title AS title, CAST(i.year AS TEXT) AS year, i.keywords AS keywords, \
+i.ai_summary AS ai_summary, a.file_path AS file_path, \
+(SELECT group_concat(TRIM(IFNULL(au.first_name,'')||' '||IFNULL(au.last_name,'')), ', ') \
+FROM items_authors ia JOIN authors au ON au.id=ia.author_id WHERE ia.item_id=i.id) AS authors \
+FROM items i JOIN attachments a ON a.item_id=i.id AND a.type='application/pdf' \
+WHERE i.deleted_at IS NULL;";
+
+    let out = std::process::Command::new(sqlite)
+        .arg("-json")
+        .arg(&db)
+        .arg(query)
+        .output()
+        .map_err(|e| format!("failed to run sqlite3: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    let body = String::from_utf8_lossy(&out.stdout);
+    let rows: Vec<ResearchRow> = if body.trim().is_empty() {
+        vec![]
+    } else {
+        serde_json::from_str(&body).map_err(|e| format!("parse error: {e}"))?
+    };
+
+    let mut lib = state.lock().unwrap();
+    std::fs::create_dir_all(lib.papers_dir()).ok();
+    let mut keys: std::collections::HashSet<String> =
+        lib.papers.iter().filter_map(|p| p.source_key.clone()).collect();
+    let mut titles: std::collections::HashSet<String> =
+        lib.papers.iter().map(|p| normalize_title(&p.title)).collect();
+
+    let total = rows.len();
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+
+    for row in rows {
+        let fp = match row.file_path.as_deref() {
+            Some(p) if !p.is_empty() => p,
+            _ => {
+                skipped += 1;
+                continue;
+            }
+        };
+        if !std::path::Path::new(fp).exists() {
+            skipped += 1;
+            continue;
+        }
+        let key = derive_source_key(fp);
+        let title = row.title.clone().unwrap_or_else(|| "Untitled".into());
+        let ntitle = normalize_title(&title);
+        if (!key.is_empty() && keys.contains(&key)) || (!ntitle.is_empty() && titles.contains(&ntitle)) {
+            skipped += 1;
+            continue;
+        }
+
+        let id = uuid::Uuid::new_v4().to_string();
+        let file_name = format!("{id}.pdf");
+        if std::fs::copy(fp, lib.papers_dir().join(&file_name)).is_err() {
+            skipped += 1;
+            continue;
+        }
+
+        let kw: Vec<String> = row
+            .keywords
+            .as_deref()
+            .unwrap_or("")
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let summary = row.ai_summary.clone().unwrap_or_default();
+        let index = if !kw.is_empty() || !summary.is_empty() {
+            Some(IndexCard {
+                summary,
+                keywords: kw,
+                indexed_at: chrono::Utc::now().to_rfc3339(),
+                ..Default::default()
+            })
+        } else {
+            None
+        };
+        let has_meta = row.title.is_some();
+        let color = COLORS[lib.papers.len() % COLORS.len()].to_string();
+
+        let paper = Paper {
+            id,
+            title,
+            authors: row.authors.clone().filter(|s| !s.is_empty()),
+            year: row.year.clone().filter(|s| !s.is_empty() && s != "0"),
+            category: "Uncategorized".into(),
+            color,
+            file_name,
+            added_at: chrono::Utc::now().to_rfc3339(),
+            last_opened_at: None,
+            progress: None,
+            metadata_extracted: has_meta,
+            source_key: if key.is_empty() { None } else { Some(key.clone()) },
+            index,
+            highlights: vec![],
+            chat: vec![],
+            sessions: vec![],
+        };
+        keys.insert(key);
+        titles.insert(ntitle);
+        lib.papers.push(paper);
+        imported += 1;
+    }
+    lib.save();
+    Ok(ImportResult { imported, skipped, total })
+}
+
+/// Extract an arXiv id from a URL (/abs/ID, /pdf/ID(.pdf)) or a bare id.
+fn extract_arxiv_id(s: &str) -> Option<String> {
+    for marker in ["/abs/", "/pdf/"] {
+        if let Some(pos) = s.find(marker) {
+            let id = s[pos + marker.len()..]
+                .split(|c| c == '?' || c == '#' || c == '/')
+                .next()
+                .unwrap_or("")
+                .trim_end_matches(".pdf");
+            if !id.is_empty() {
+                return Some(id.to_string());
+            }
+        }
+    }
+    let bare = s.trim();
+    let looks_like_id = bare.len() >= 9
+        && !bare.contains('/')
+        && bare.contains('.')
+        && bare.chars().next().is_some_and(|c| c.is_ascii_digit());
+    looks_like_id.then(|| bare.to_string())
+}
+
+fn filename_title(url: &str) -> String {
+    let path = url.split(|c| c == '?' || c == '#').next().unwrap_or(url);
+    let seg = path.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+    let stem = seg.strip_suffix(".pdf").unwrap_or(seg);
+    if stem.is_empty() {
+        "Imported paper".to_string()
+    } else {
+        stem.to_string()
+    }
+}
+
+/// Import a paper from a URL (arXiv link/id or a direct PDF link), de-duped by arXiv id.
+#[tauri::command]
+pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> Result<Paper, String> {
+    let input = url.trim().to_string();
+    if input.is_empty() {
+        return Err("Enter a URL".into());
+    }
+    let (pdf_url, source_key, title) = match extract_arxiv_id(&input) {
+        Some(id) => {
+            let key = id.split('v').next().unwrap_or(&id).to_lowercase();
+            (format!("https://arxiv.org/pdf/{id}"), Some(key), format!("arXiv:{id}"))
+        }
+        None => (input.clone(), None, filename_title(&input)),
+    };
+
+    // Download with no lock held across the await.
+    let client = reqwest::Client::builder()
+        .user_agent("ReaderApp/0.1 (research reader)")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(&pdf_url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", resp.status().as_u16()));
+    }
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() < 5 || &bytes[..5] != b"%PDF-" {
+        return Err("That URL didn't return a PDF".into());
+    }
+
+    let mut lib = state.lock().unwrap();
+    if let Some(k) = &source_key {
+        if lib.papers.iter().any(|p| p.source_key.as_deref() == Some(k.as_str())) {
+            return Err("Already in your library".into());
+        }
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let file_name = format!("{id}.pdf");
+    std::fs::create_dir_all(lib.papers_dir()).map_err(|e| e.to_string())?;
+    std::fs::write(lib.papers_dir().join(&file_name), &bytes).map_err(|e| e.to_string())?;
+    let color = COLORS[lib.papers.len() % COLORS.len()].to_string();
+
+    let paper = Paper {
+        id,
+        title,
+        authors: None,
+        year: None,
+        category: "Uncategorized".into(),
+        color,
+        file_name,
+        added_at: chrono::Utc::now().to_rfc3339(),
+        last_opened_at: None,
+        progress: None,
+        metadata_extracted: false,
+        source_key,
+        index: None,
+        highlights: vec![],
+        chat: vec![],
+        sessions: vec![],
+    };
+    lib.papers.push(paper.clone());
+    lib.save();
+    Ok(paper)
+}
+
+#[tauri::command]
+pub fn read_pdf_bytes(state: State<'_, Mutex<Library>>, id: String) -> Result<Response, String> {
+    let lib = state.lock().unwrap();
+    let paper = lib
+        .papers
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or("paper not found")?;
+    let bytes = std::fs::read(lib.papers_dir().join(&paper.file_name)).map_err(|e| e.to_string())?;
+    Ok(Response::new(bytes))
+}
+
+#[tauri::command]
+pub fn update_paper(state: State<'_, Mutex<Library>>, paper: Paper) -> Result<(), String> {
+    let mut lib = state.lock().unwrap();
+    match lib.papers.iter_mut().find(|p| p.id == paper.id) {
+        Some(slot) => {
+            *slot = paper;
+            lib.save();
+            Ok(())
+        }
+        None => Err("paper not found".into()),
+    }
+}
+
+#[tauri::command]
+pub fn delete_paper(state: State<'_, Mutex<Library>>, id: String) -> Result<(), String> {
+    let mut lib = state.lock().unwrap();
+    if let Some(pos) = lib.papers.iter().position(|p| p.id == id) {
+        let file = lib.papers_dir().join(&lib.papers[pos].file_name);
+        let _ = std::fs::remove_file(file);
+        lib.papers.remove(pos);
+        lib.save();
+    }
+    Ok(())
+}

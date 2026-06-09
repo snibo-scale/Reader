@@ -1,0 +1,19 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="224" fill="#66800B"/>
+  <g>
+    <!-- document with folded corner -->
+    <path d="M320 250 H600 L740 390 V780 a30 30 0 0 1 -30 30 H320 a30 30 0 0 1 -30 -30 V280 a30 30 0 0 1 30 -30 Z" fill="#FFFCF0"/>
+    <path d="M600 250 V360 a30 30 0 0 0 30 30 H740 Z" fill="#E6E4D9"/>
+    <!-- connection nodes overlaying the page -->
+    <g stroke="#B7B5AC" stroke-width="12" stroke-linecap="round">
+      <line x1="400" y1="560" x2="520" y2="500"/>
+      <line x1="520" y1="500" x2="640" y2="600"/>
+      <line x1="400" y1="560" x2="500" y2="690"/>
+      <line x1="500" y1="690" x2="640" y2="600"/>
+    </g>
+    <circle cx="400" cy="560" r="40" fill="#4385BE"/>
+    <circle cx="520" cy="500" r="46" fill="#AF3029"/>
+    <circle cx="640" cy="600" r="40" fill="#D0A215"/>
+    <circle cx="500" cy="690" r="38" fill="#8B7EC8"/>
+  </g>
+</svg>
