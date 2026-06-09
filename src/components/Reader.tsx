@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Highlight, Paper, Rect } from "../types";
 import { analyzePaper, readPdfBytes } from "../lib/api";
@@ -14,6 +14,7 @@ import ChatPanel from "./ChatPanel";
 import RelatedCard from "./RelatedCard";
 
 const HL_COLOR = "rgba(255, 222, 89, 0.45)";
+const NO_HIGHLIGHTS: Highlight[] = [];
 
 interface Props {
   paper: Paper;
@@ -39,6 +40,7 @@ interface SelectionState {
 export default function Reader({ paper, papers, onBack, onChange, onOpenPaper }: Props) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
+  const [base, setBase] = useState({ w: 612, h: 792 });
   const [scale, setScale] = useState(1.4);
   const [paperText, setPaperText] = useState("");
   const [selection, setSelection] = useState<SelectionState | null>(null);
@@ -58,7 +60,12 @@ export default function Reader({ paper, papers, onBack, onChange, onOpenPaper }:
   const containerRef = useRef<HTMLDivElement>(null);
   const metaTried = useRef(false);
 
-  const tint = resolveTint(tintMode, tintColor);
+  const tint = useMemo(() => resolveTint(tintMode, tintColor), [tintMode, tintColor]);
+  const hlByPage = useMemo(() => {
+    const m = new Map<number, Highlight[]>();
+    for (const h of paper.highlights) m.set(h.page, [...(m.get(h.page) ?? []), h]);
+    return m;
+  }, [paper.highlights]);
   useEffect(() => {
     localStorage.setItem("reader.tintMode", tintMode);
     localStorage.setItem("reader.tintColor", JSON.stringify(tintColor));
@@ -72,6 +79,11 @@ export default function Reader({ paper, papers, onBack, onChange, onOpenPaper }:
       if (cancelled) return;
       setDoc(d);
       setNumPages(d.numPages);
+      d.getPage(1).then((p) => {
+        if (cancelled) return;
+        const v = p.getViewport({ scale: 1 });
+        setBase({ w: v.width, h: v.height });
+      });
       extractText(d).then((t) => {
         if (!cancelled) setPaperText(t);
       });
@@ -210,8 +222,11 @@ export default function Reader({ paper, papers, onBack, onChange, onOpenPaper }:
                 pageNumber={i + 1}
                 scale={scale}
                 tint={tint}
-                highlights={paper.highlights.filter((h) => h.page === i + 1)}
+                highlights={hlByPage.get(i + 1) ?? NO_HIGHLIGHTS}
                 onRemoveHighlight={removeHighlight}
+                estimateW={base.w}
+                estimateH={base.h}
+                scrollRef={containerRef}
               />
             ))
           ) : (

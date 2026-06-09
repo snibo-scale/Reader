@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { pdfjsLib } from "../lib/pdf";
 import type { Tint } from "../lib/tints";
@@ -11,55 +11,91 @@ interface Props {
   tint: Tint;
   highlights: Highlight[];
   onRemoveHighlight: (id: string) => void;
+  estimateW: number;
+  estimateH: number;
+  scrollRef: { current: HTMLElement | null };
 }
 
-export default function PdfPage({ doc, pageNumber, scale, tint, highlights, onRemoveHighlight }: Props) {
+function PdfPage({
+  doc,
+  pageNumber,
+  scale,
+  tint,
+  highlights,
+  onRemoveHighlight,
+  estimateW,
+  estimateH,
+  scrollRef,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [size, setSize] = useState({ w: estimateW * scale, h: estimateH * scale });
+
+  // Only mount a page's heavy canvas/text layer when it's near the viewport.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver((entries) => setVisible(entries[0].isIntersecting), {
+      root: scrollRef.current ?? null,
+      rootMargin: "1200px 0px",
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [scrollRef]);
+
+  // Keep the placeholder sized while not rendered, so scroll height stays stable.
+  useEffect(() => {
+    if (!visible) setSize({ w: estimateW * scale, h: estimateH * scale });
+  }, [visible, scale, estimateW, estimateH]);
 
   useEffect(() => {
+    if (!visible) {
+      const c = canvasRef.current;
+      if (c) {
+        c.width = 0;
+        c.height = 0;
+      }
+      textRef.current?.replaceChildren();
+      return;
+    }
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let renderTask: any = null;
+    let renderTask: { promise: Promise<void>; cancel?: () => void } | null = null;
 
     (async () => {
       const page = await doc.getPage(pageNumber);
       if (cancelled) return;
       const viewport = page.getViewport({ scale });
       const canvas = canvasRef.current;
-      const wrap = wrapRef.current;
       const layer = textRef.current;
-      if (!canvas || !wrap || !layer) return;
-
+      if (!canvas || !layer) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.floor(viewport.width * dpr);
       canvas.height = Math.floor(viewport.height * dpr);
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
-      wrap.style.width = `${viewport.width}px`;
-      wrap.style.height = `${viewport.height}px`;
-      layer.style.width = `${viewport.width}px`;
-      layer.style.height = `${viewport.height}px`;
+      setSize({ w: viewport.width, h: viewport.height });
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       renderTask = page.render({ canvasContext: ctx, viewport });
       try {
         await renderTask.promise;
       } catch {
-        return; // render cancelled
+        return;
       }
       if (cancelled) return;
 
-      // Build a selectable transparent text layer aligned over the canvas.
       const content = await page.getTextContent();
       if (cancelled) return;
       layer.replaceChildren();
+      layer.style.width = `${viewport.width}px`;
+      layer.style.height = `${viewport.height}px`;
       const util = (pdfjsLib as unknown as { Util: { transform: (a: number[], b: number[]) => number[] } }).Util;
       const targets: { span: HTMLSpanElement; width: number }[] = [];
-
       for (const item of content.items) {
         if (!("str" in item) || !item.str) continue;
         const tx = util.transform(viewport.transform as unknown as number[], item.transform as number[]);
@@ -73,48 +109,45 @@ export default function PdfPage({ doc, pageNumber, scale, tint, highlights, onRe
         layer.appendChild(span);
         targets.push({ span, width: item.width * viewport.scale });
       }
-
-      // Second pass: horizontally scale each span to match the glyph run width.
       for (const { span, width } of targets) {
         const actual = span.offsetWidth;
-        if (actual > 0 && width > 0) {
-          span.style.transform = `scaleX(${width / actual})`;
-        }
+        if (actual > 0 && width > 0) span.style.transform = `scaleX(${width / actual})`;
       }
     })();
 
     return () => {
       cancelled = true;
-      if (renderTask && typeof renderTask.cancel === "function") renderTask.cancel();
+      renderTask?.cancel?.();
     };
-  }, [doc, pageNumber, scale]);
+  }, [doc, pageNumber, scale, visible]);
 
   return (
-    <div className="pdf-page" data-page={pageNumber} ref={wrapRef}>
+    <div className="pdf-page" data-page={pageNumber} ref={wrapRef} style={{ width: size.w, height: size.h }}>
       <canvas ref={canvasRef} style={{ filter: tint.filter }} />
-      {tint.overlay && (
-        <div className="tint-overlay" style={{ background: tint.overlay }} />
-      )}
+      {tint.overlay && <div className="tint-overlay" style={{ background: tint.overlay }} />}
       <div className="text-layer" ref={textRef} />
       <div className="hl-layer">
-        {highlights.flatMap((h) =>
-          h.rects.map((r, idx) => (
-            <div
-              key={`${h.id}-${idx}`}
-              className="hl"
-              title={h.note ? h.note : "Click to remove highlight"}
-              style={{
-                left: `${r.x * 100}%`,
-                top: `${r.y * 100}%`,
-                width: `${r.w * 100}%`,
-                height: `${r.h * 100}%`,
-                background: h.color,
-              }}
-              onClick={() => onRemoveHighlight(h.id)}
-            />
-          ))
-        )}
+        {visible &&
+          highlights.flatMap((h) =>
+            h.rects.map((r, idx) => (
+              <div
+                key={`${h.id}-${idx}`}
+                className="hl"
+                title={h.note ? h.note : "Click to remove highlight"}
+                style={{
+                  left: `${r.x * 100}%`,
+                  top: `${r.y * 100}%`,
+                  width: `${r.w * 100}%`,
+                  height: `${r.h * 100}%`,
+                  background: h.color,
+                }}
+                onClick={() => onRemoveHighlight(h.id)}
+              />
+            ))
+          )}
       </div>
     </div>
   );
 }
+
+export default memo(PdfPage);
