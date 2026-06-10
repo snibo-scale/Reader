@@ -43,25 +43,68 @@ export function parseAnalysis(raw: string): Analysis | null {
 import type { Reference } from "../types";
 export type { Reference };
 
+const toReference = (o: Record<string, unknown>): Reference => ({
+  title: String(o.title ?? "").trim(),
+  authors: String(o.authors ?? "").trim(),
+  year: o.year != null ? String(o.year).trim() : "",
+  arxivId: String(o.arxivId ?? "").trim(),
+});
+
+/**
+ * Scan a string for top-level JSON objects (`{...}`) and parse each one
+ * independently. Used as a fallback when the surrounding array is truncated
+ * (long bibliography exceeds the model's output budget) or one entry is
+ * malformed — so we recover every well-formed reference instead of none.
+ */
+export function salvageObjects(raw: string): Reference[] {
+  const out: Reference[] = [];
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  let escaped = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inStr) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        try {
+          out.push(toReference(JSON.parse(raw.slice(start, i + 1))));
+        } catch {
+          /* skip this object, keep scanning */
+        }
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
 /** Parse a JSON array of references from an LLM response. */
 export function parseReferences(raw: string): Reference[] {
   const start = raw.indexOf("[");
   const end = raw.lastIndexOf("]");
-  if (start === -1 || end === -1 || end < start) return [];
-  try {
-    const arr = JSON.parse(raw.slice(start, end + 1));
-    if (!Array.isArray(arr)) return [];
-    return arr
-      .map((o: Record<string, unknown>) => ({
-        title: String(o.title ?? "").trim(),
-        authors: String(o.authors ?? "").trim(),
-        year: o.year != null ? String(o.year).trim() : "",
-        arxivId: String(o.arxivId ?? "").trim(),
-      }))
-      .filter((r) => r.title.length > 0);
-  } catch {
-    return [];
+  let refs: Reference[] | null = null;
+  if (start !== -1 && end !== -1 && end > start) {
+    try {
+      const arr = JSON.parse(raw.slice(start, end + 1));
+      if (Array.isArray(arr)) refs = arr.map(toReference);
+    } catch {
+      /* fall back to per-object salvage below */
+    }
   }
+  // Whole-array parse failed (truncated/malformed) — recover individual objects.
+  if (refs === null) refs = salvageObjects(raw);
+  return refs.filter((r) => r.title.length > 0);
 }
 
 /** Parse a JSON array of strings from an LLM response (with light fallbacks). */

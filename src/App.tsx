@@ -9,7 +9,7 @@ import {
   listPapers,
   updatePaper,
 } from "./lib/api";
-import { buildIndex, needsWork } from "./lib/indexer";
+import { buildIndex, needsIndexing } from "./lib/indexer";
 import { getModel, getProvider } from "./lib/settings";
 import Sidebar, { type View } from "./components/Sidebar";
 import Library from "./components/Library";
@@ -38,6 +38,14 @@ export default function App() {
     new URLSearchParams(window.location.search).get("paper")
   );
 
+  // Always-current mirror of `papers` so callbacks can read the latest committed
+  // state synchronously (without capturing it as a side-effect inside a setState
+  // updater, which React 18 runs lazily — that drops writes like lastOpenedAt).
+  const papersRef = useRef<Paper[]>([]);
+  useEffect(() => {
+    papersRef.current = papers;
+  }, [papers]);
+
   const refresh = useCallback(async () => {
     setPapers(await listPapers());
   }, []);
@@ -45,23 +53,19 @@ export default function App() {
   // Merge an indexing result onto the latest paper (preserving highlights/notes/
   // sessions that may have changed while indexing ran), then persist.
   const applyIndexResult = useCallback((id: string, u: Paper) => {
-    let merged: Paper | null = null;
-    setPapers((list) =>
-      list.map((p) => {
-        if (p.id !== id) return p;
-        merged = {
-          ...p,
-          title: u.title,
-          year: u.year,
-          authors: u.authors,
-          metadataExtracted: u.metadataExtracted,
-          index: u.index,
-          references: u.references,
-        };
-        return merged;
-      })
-    );
-    if (merged) updatePaper(merged);
+    const p = papersRef.current.find((x) => x.id === id);
+    if (!p) return;
+    const merged: Paper = {
+      ...p,
+      title: u.title,
+      year: u.year,
+      authors: u.authors,
+      metadataExtracted: u.metadataExtracted,
+      index: u.index,
+      references: u.references,
+    };
+    setPapers((list) => list.map((x) => (x.id === id ? merged : x)));
+    updatePaper(merged);
   }, []);
 
   // Index a paper in the BACKGROUND (App stays mounted) so it keeps running and
@@ -69,7 +73,7 @@ export default function App() {
   // per paper and only the steps that are missing.
   const ensureIndexed = useCallback(
     (paper: Paper) => {
-      if (!needsWork(paper) || indexingRef.current.has(paper.id)) return;
+      if (!needsIndexing(paper) || indexingRef.current.has(paper.id)) return;
       indexingRef.current.add(paper.id);
       setIndexingIds(new Set(indexingRef.current));
       buildIndex(paper, getProvider(), getModel())
@@ -156,9 +160,11 @@ export default function App() {
     await updatePaper(paper);
   }, []);
 
-  // Index every un-indexed paper, one at a time, in the background.
+  // Index every un-indexed paper, one at a time, in the background. A paper counts
+  // as un-indexed until both its analysis and references are done; buildIndex runs
+  // only the missing steps, so already-indexed papers are skipped.
   const handleIndexAll = useCallback(async () => {
-    const todo = papers.filter(needsWork);
+    const todo = papers.filter(needsIndexing);
     if (todo.length === 0) {
       setImportNote("All papers are already indexed");
       return;
@@ -186,13 +192,12 @@ export default function App() {
   const openPaper = useCallback(
     (id: string) => {
       setActiveId(id);
-      const now = new Date().toISOString();
-      let updated: Paper | null = null;
-      setPapers((list) => list.map((p) => (p.id === id ? (updated = { ...p, lastOpenedAt: now }) : p)));
-      if (updated) {
-        updatePaper(updated);
-        ensureIndexed(updated); // continue/start background indexing (survives exit)
-      }
+      const target = papersRef.current.find((p) => p.id === id);
+      if (!target) return;
+      const updated: Paper = { ...target, lastOpenedAt: new Date().toISOString() };
+      setPapers((list) => list.map((p) => (p.id === id ? updated : p)));
+      updatePaper(updated);
+      ensureIndexed(updated); // continue/start background indexing (survives exit)
     },
     [ensureIndexed]
   );
@@ -215,15 +220,14 @@ export default function App() {
   );
 
   const handleUpdateNote = useCallback((paperId: string, highlightId: string, note: string) => {
-    let updated: Paper | null = null;
-    setPapers((list) =>
-      list.map((p) => {
-        if (p.id !== paperId) return p;
-        updated = { ...p, highlights: p.highlights.map((h) => (h.id === highlightId ? { ...h, note } : h)) };
-        return updated;
-      })
-    );
-    if (updated) updatePaper(updated);
+    const p = papersRef.current.find((x) => x.id === paperId);
+    if (!p) return;
+    const updated: Paper = {
+      ...p,
+      highlights: p.highlights.map((h) => (h.id === highlightId ? { ...h, note } : h)),
+    };
+    setPapers((list) => list.map((x) => (x.id === paperId ? updated : x)));
+    updatePaper(updated);
   }, []);
 
   const navigate = useCallback((v: View) => {
@@ -278,6 +282,7 @@ export default function App() {
     main = (
       <Library
         papers={papers}
+        mode={view === "all" ? "all" : "recent"}
         activeCategory={category}
         importing={importing}
         importNote={importNote}

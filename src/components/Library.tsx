@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Paper } from "../types";
-import { needsWork } from "../lib/indexer";
+import { needsIndexing } from "../lib/indexer";
 import { paperInCategory } from "../lib/connections";
 import { tagTint } from "../lib/colors";
 import { formatAuthors } from "../lib/util";
@@ -55,6 +55,7 @@ function PaperCard({ paper, onOpen, onDelete }: CardProps) {
 
 interface Props {
   papers: Paper[];
+  mode: "recent" | "all";
   activeCategory: string | null;
   importing: boolean;
   importNote: string | null;
@@ -70,6 +71,7 @@ interface Props {
 
 export default function Library({
   papers,
+  mode,
   activeCategory,
   importing,
   importNote,
@@ -84,7 +86,14 @@ export default function Library({
 }: Props) {
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
-  const unindexed = papers.filter(needsWork).length;
+  // Track how many columns currently fit so we can lay cards out row-major
+  // (left-to-right, then top-to-bottom) while still packing each column with no
+  // vertical gaps — CSS multi-column would pack column-major and break the order.
+  const COL_W = 230;
+  const GAP = 20;
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [numCols, setNumCols] = useState(1);
+  const unindexed = papers.filter(needsIndexing).length;
   const indexing = indexProgress !== null;
   const submitUrl = () => {
     if (!url.trim()) return;
@@ -99,12 +108,36 @@ export default function Library({
     return opened > added ? opened : added;
   };
   const sorted = [...papers].sort((a, b) => recency(b).localeCompare(recency(a)));
-  const shown = activeCategory ? sorted.filter((p) => paperInCategory(p, activeCategory)) : sorted;
+  // Recent = anything opened or added within the past week (recency order preserved).
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const shown = activeCategory
+    ? sorted.filter((p) => paperInCategory(p, activeCategory))
+    : mode === "recent"
+    ? sorted.filter((p) => recency(p) >= weekAgo)
+    : sorted;
+  const hasGrid = shown.length > 0;
+
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const update = () =>
+      setNumCols(Math.max(1, Math.floor((el.clientWidth + GAP) / (COL_W + GAP))));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasGrid]);
+
+  // Round-robin so reading order is left-to-right across a row, then the next row.
+  const columns: Paper[][] = Array.from({ length: numCols }, () => []);
+  shown.forEach((p, i) => columns[i % numCols].push(p));
+
   return (
     <div className="library">
       <header className="lib-header">
         <div className="crumbs">
-          <strong>My Library</strong> <span className="sep">/</span> {activeCategory ?? "Recent"}
+          <strong>My Library</strong> <span className="sep">/</span>{" "}
+          {activeCategory ?? (mode === "all" ? "All Papers" : "Recent")}
         </div>
         <div className="lib-actions">
           <button className="ghost-btn" onClick={onIndexAll} disabled={indexing || unindexed === 0}>
@@ -161,12 +194,20 @@ export default function Library({
         </div>
       ) : shown.length === 0 ? (
         <div className="empty">
-          <p>No papers tagged "{activeCategory}".</p>
+          <p>
+            {activeCategory
+              ? `No papers tagged "${activeCategory}".`
+              : "Nothing opened or added in the past week — see All Papers."}
+          </p>
         </div>
       ) : (
-        <div className="grid">
-          {shown.map((p) => (
-            <PaperCard key={p.id} paper={p} onOpen={onOpen} onDelete={onDelete} />
+        <div className="grid" ref={gridRef}>
+          {columns.map((col, ci) => (
+            <div className="grid-col" key={ci}>
+              {col.map((p) => (
+                <PaperCard key={p.id} paper={p} onOpen={onOpen} onDelete={onDelete} />
+              ))}
+            </div>
           ))}
         </div>
       )}

@@ -624,17 +624,24 @@ button {
   cursor: default;
 }
 
-/* row-major order (left-to-right, then top-to-bottom), with masonry packing
-   where supported (grid-template-rows: masonry) and a clean grid fallback. */
+/* Row-major masonry: JS distributes cards across these columns left-to-right
+   (item i -> column i % n), so reading order is left-to-right then top-to-bottom,
+   while each column packs vertically with no gaps. */
 .grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  grid-template-rows: masonry;
-  align-items: start;
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+.grid-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 20px;
 }
 
 .card {
+  width: 100%;
   border-radius: 14px;
   padding: 16px 18px;
   min-height: 150px;

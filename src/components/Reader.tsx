@@ -42,6 +42,49 @@ interface SelectionState {
   pending: PendingHighlight | null;
 }
 
+// Reconstruct the selected text directly from the text-layer spans that fall
+// under the selection, ordered by visual position. WebKit's Selection.toString()
+// walks the DOM and drops/merges content across the absolutely-positioned spans
+// of our custom text layer, so the saved quote can miss text even when the
+// highlight bands look right. Reading the geometry keeps text and highlight in sync.
+function selectionTextFromGeometry(range: Range, layer: HTMLElement): string {
+  const selRects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
+  if (!selRects.length) return "";
+
+  type Frag = { x: number; y: number; right: number; h: number; text: string };
+  const frags: Frag[] = [];
+  for (const span of Array.from(layer.querySelectorAll<HTMLSpanElement>("span"))) {
+    const sr = span.getBoundingClientRect();
+    if (sr.width === 0 || sr.height === 0) continue;
+    const cy = sr.top + sr.height / 2;
+    // Include a span only when its vertical center lands inside a selection rect
+    // (same line — no bleed onto the line above/below) AND most of its width is
+    // horizontally within the selection (so grazed boundary words aren't pulled in).
+    const onSelection = selRects.some((r) => {
+      if (cy < r.top || cy > r.bottom) return false;
+      const ox = Math.max(0, Math.min(sr.right, r.right) - Math.max(sr.left, r.left));
+      return ox >= sr.width * 0.5;
+    });
+    if (!onSelection) continue;
+    frags.push({ x: sr.left, y: sr.top, right: sr.right, h: sr.height, text: span.textContent ?? "" });
+  }
+
+  frags.sort((a, b) => (Math.abs(a.y - b.y) > Math.min(a.h, b.h) * 0.5 ? a.y - b.y : a.x - b.x));
+
+  let out = "";
+  let prev: Frag | null = null;
+  for (const f of frags) {
+    if (prev) {
+      const newLine = f.y - prev.y > Math.min(prev.h, f.h) * 0.5;
+      const gap = f.x - prev.right > f.h * 0.2;
+      if ((newLine || gap) && !out.endsWith(" ")) out += " ";
+    }
+    out += f.text;
+    prev = f;
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
+
 export default function Reader({ paper, papers, indexing, onBack, onChange, onOpenPaper, onImported }: Props) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -145,9 +188,9 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
       setSelection(null);
       return;
     }
-    const text = sel.toString().trim();
+    const rawText = sel.toString().trim();
     const anchor = sel.anchorNode;
-    if (!text || !anchor || !containerRef.current?.contains(anchor)) {
+    if (!rawText || !anchor || !containerRef.current?.contains(anchor)) {
       setSelection(null);
       return;
     }
@@ -155,9 +198,13 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     const box = range.getBoundingClientRect();
 
     let pending: PendingHighlight | null = null;
+    let text = rawText;
     const anchorEl = anchor.nodeType === 1 ? (anchor as Element) : anchor.parentElement;
     const pageEl = anchorEl?.closest(".pdf-page") as HTMLElement | null;
     if (pageEl?.dataset.page) {
+      const layer = pageEl.querySelector<HTMLElement>(".text-layer");
+      // Prefer geometry-reconstructed text; fall back to the raw selection string.
+      if (layer) text = selectionTextFromGeometry(range, layer) || rawText;
       const pr = pageEl.getBoundingClientRect();
       const rects: Rect[] = Array.from(range.getClientRects())
         .filter((r) => r.width > 1 && r.height > 1)

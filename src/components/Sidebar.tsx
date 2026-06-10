@@ -1,7 +1,7 @@
 import type { Paper } from "../types";
 import Logo from "./Logo";
 
-export type View = "library" | "search" | "discover" | "canvas" | "timeline" | "highlights" | "settings";
+export type View = "library" | "all" | "search" | "discover" | "canvas" | "timeline" | "highlights" | "settings";
 
 interface Props {
   papers: Paper[];
@@ -48,6 +48,7 @@ export default function Sidebar({ view, inReader, activeCategory, collapsed, onT
         </div>
         <nav className="nav-top">
           {item("library", "Recent", inLibrary && !activeCategory)}
+          {item("all", "All Papers", !inReader && view === "all")}
           {item("search", "Search", !inReader && view === "search")}
           {item("discover", "Discover", !inReader && view === "discover")}
           {item("canvas", "Canvas", !inReader && view === "canvas")}

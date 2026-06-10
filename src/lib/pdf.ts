@@ -14,7 +14,7 @@ export async function loadPdf(bytes: Uint8Array): Promise<PDFDocumentProxy> {
 }
 
 /** Text from the last pages of a PDF — where the references/bibliography live. */
-export async function extractTailText(doc: PDFDocumentProxy, tailPages = 12, maxChars = 45000): Promise<string> {
+export async function extractTailText(doc: PDFDocumentProxy, tailPages = 16, maxChars = 60000): Promise<string> {
   const start = Math.max(1, doc.numPages - tailPages + 1);
   let out = "";
   for (let i = start; i <= doc.numPages; i++) {

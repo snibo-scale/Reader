@@ -25,8 +25,8 @@ export function applyAnalysis(paper: Paper, a: Analysis): Paper {
   };
 }
 
-/** A paper needs indexing if it has no index yet, or only a keyword seed. */
-export function needsIndexing(p: Paper): boolean {
+/** Analysis (summary/topics/metadata) hasn't been generated yet. */
+export function needsAnalysis(p: Paper): boolean {
   return !p.index || p.index.topics.length === 0;
 }
 
@@ -35,9 +35,13 @@ export function needsReferences(p: Paper): boolean {
   return p.references == null;
 }
 
-/** A paper needs any LLM indexing work (analysis and/or references). */
-export function needsWork(p: Paper): boolean {
-  return needsIndexing(p) || needsReferences(p);
+/**
+ * A paper isn't fully indexed until BOTH its analysis and its references are
+ * done. Reference extraction is part of indexing, so a paper missing either
+ * step still "needs indexing" and is picked up by Index all.
+ */
+export function needsIndexing(p: Paper): boolean {
+  return needsAnalysis(p) || needsReferences(p);
 }
 
 /**
@@ -51,13 +55,13 @@ export async function buildIndex(
   provider: Provider = "claude",
   model: string | null = null
 ): Promise<Paper | null> {
-  if (!needsWork(paper)) return null;
+  if (!needsIndexing(paper)) return null;
   const bytes = await readPdfBytes(paper.id);
   const doc = await loadPdf(bytes);
   let next = paper;
   let changed = false;
 
-  if (needsIndexing(next)) {
+  if (needsAnalysis(next)) {
     try {
       const text = await extractText(doc);
       if (text.trim()) {

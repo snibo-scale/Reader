@@ -185,17 +185,18 @@ pub async fn suggest_queries(
 }
 
 fn build_refs_prompt(text: &str) -> String {
-    let snippet: String = text.chars().take(45_000).collect();
+    let snippet: String = text.chars().take(60_000).collect();
     format!(
         "The text below is the end of an academic paper, including its \
-References / Bibliography. Extract the cited works. Respond with ONLY a JSON array, \
+References / Bibliography. Extract EVERY cited work you can identify. Respond with ONLY a JSON array, \
 each item exactly this shape:\n\
 {{\"title\":\"\",\"authors\":\"\",\"year\":\"\",\"arxivId\":\"\"}}\n\
 - title: the cited paper's title.\n\
 - authors: first author et al. (short).\n\
 - year: 4-digit year if present.\n\
 - arxivId: the arXiv id (e.g. 2401.01234) ONLY if explicitly present in the text, else \"\".\n\
-Include up to 40 of the most clearly identifiable references. No commentary, no markdown.\n\n\
+Include all clearly identifiable references (there may be 100 or more). Do not stop early or \
+summarize. No commentary, no markdown.\n\n\
 TEXT:\n{snippet}\n"
     )
 }
