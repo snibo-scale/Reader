@@ -448,6 +448,37 @@ button {
   outline: none;
   box-shadow: inset 0 0 0 1px var(--accent);
 }
+.annot-notes {
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.annot-notes-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.annot-notes-area {
+  width: 100%;
+  min-height: 88px;
+  border: none;
+  background: var(--base-100);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+  user-select: text;
+}
+.annot-notes-area:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
 
 /* Chat session switcher */
 .session-bar {
@@ -509,19 +540,6 @@ button {
   cursor: default;
 }
 
-.nav-heading {
-  font-weight: 700;
-  font-size: 15px;
-  padding: 6px 10px;
-  margin-top: 6px;
-}
-
-.lib-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .dot {
   width: 11px;
   height: 11px;
@@ -534,28 +552,6 @@ button {
   margin-left: auto;
   color: var(--muted);
   font-size: 13px;
-}
-
-.cat-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  max-height: calc(100vh - 230px);
-  overflow-y: auto;
-}
-.cat-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nav-item.lib-row.current {
-  background: var(--base-150);
-}
-.nav-empty {
-  font-size: 12px;
-  color: var(--muted);
-  padding: 4px 10px;
-  line-height: 1.4;
 }
 
 .sidebar-footer .nav-item {
@@ -669,10 +665,6 @@ button {
   font-size: 12px;
   font-weight: 600;
 }
-.card-cat {
-  font-size: 14px;
-  color: #4a463f;
-}
 .card-title {
   font-family: var(--serif);
   font-size: 21px;
@@ -684,20 +676,6 @@ button {
   font-size: 14px;
   margin-top: 8px;
 }
-.card-topics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 10px;
-}
-.topic-chip {
-  background: rgba(255, 255, 255, 0.6);
-  border-radius: 10px;
-  padding: 2px 8px;
-  font-size: 11px;
-  color: #4a463f;
-}
-
 .card-bottom {
   margin-top: auto;
   display: flex;
@@ -1011,12 +989,6 @@ button {
   font-size: 12px;
   color: var(--muted);
 }
-.result-tags {
-  display: flex;
-  gap: 5px;
-  flex-shrink: 0;
-}
-
 /* Timeline */
 .tl-track {
   display: flex;
@@ -1585,13 +1557,6 @@ button {
   gap: 4px;
   max-height: 168px;
   overflow-y: auto;
-}
-.related-head {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin-bottom: 2px;
 }
 .related-item {
   background: none;

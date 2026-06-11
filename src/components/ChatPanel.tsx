@@ -37,6 +37,12 @@ export default function ChatPanel({ paper, paperText, seedContext, onConsumeSeed
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Latest paper across renders, so the post-stream commit merges onto current
+  // state instead of the snapshot taken when send() started (highlights/notes
+  // added while the answer streamed would otherwise be overwritten).
+  const paperRef = useRef(paper);
+  paperRef.current = paper;
+
   const active = sessions.find((s) => s.id === activeId) ?? null;
   const messages = active?.messages ?? [];
   const sorted = [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -121,7 +127,8 @@ export default function ChatPanel({ paper, paperText, seedContext, onConsumeSeed
       messages: [...sessionAfterUser.messages, aiMsg],
       updatedAt: new Date().toISOString(),
     };
-    onChange({ ...paperAfterUser, sessions: upsert(paperAfterUser.sessions, sessionFinal) });
+    const latest = paperRef.current;
+    onChange({ ...latest, sessions: upsert(latest.sessions ?? [], sessionFinal) });
     setStreaming("");
     setBusy(false);
     setCtx(null);

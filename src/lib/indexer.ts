@@ -12,7 +12,6 @@ export function applyAnalysis(paper: Paper, a: Analysis): Paper {
     title: a.title || paper.title,
     year: a.year || paper.year,
     authors: a.authors.length ? a.authors.join(", ") : paper.authors,
-    metadataExtracted: true,
     index: {
       summary: a.summary,
       topics: a.topics,

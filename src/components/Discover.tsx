@@ -4,7 +4,7 @@ import type { Paper } from "../types";
 import { arxivSearch, importFromUrl, suggestQueries, type ArxivPaper } from "../lib/api";
 import { parseStringArray } from "../lib/metadata";
 import { readingProfile, similarInLibrary } from "../lib/connections";
-import { formatAuthors } from "../lib/util";
+import { baseArxivId, formatAuthors } from "../lib/util";
 import { getModel, getProvider } from "../lib/settings";
 
 export interface Rec extends ArxivPaper {
@@ -13,10 +13,6 @@ export interface Rec extends ArxivPaper {
 export interface DiscoverCache {
   queries: string[];
   recs: Rec[];
-}
-
-function baseId(id: string): string {
-  return id.replace(/v\d+$/i, "").toLowerCase();
 }
 
 interface Props {
@@ -78,7 +74,7 @@ export default function Discover({ papers, cache, onCache, onImported, onOpen }:
           /* skip this query on network error */
         }
         for (const r of results) {
-          const key = baseId(r.id);
+          const key = baseArxivId(r.id);
           if (have.has(key) || seen.has(key)) continue;
           seen.add(key);
           out.push({ ...r, matchedQuery: q });

@@ -1,20 +1,16 @@
-import type { Paper } from "../types";
 import Logo from "./Logo";
 
 export type View = "library" | "all" | "search" | "discover" | "canvas" | "timeline" | "highlights" | "settings";
 
 interface Props {
-  papers: Paper[];
   view: View;
   inReader: boolean;
-  activeCategory: string | null;
   collapsed: boolean;
   onToggle: () => void;
   onNavigate: (v: View) => void;
-  onSelectCategory: (category: string | null) => void;
 }
 
-export default function Sidebar({ view, inReader, activeCategory, collapsed, onToggle, onNavigate }: Props) {
+export default function Sidebar({ view, inReader, collapsed, onToggle, onNavigate }: Props) {
   const inLibrary = !inReader && view === "library";
 
   if (collapsed) {
@@ -47,7 +43,7 @@ export default function Sidebar({ view, inReader, activeCategory, collapsed, onT
           </button>
         </div>
         <nav className="nav-top">
-          {item("library", "Recent", inLibrary && !activeCategory)}
+          {item("library", "Recent", inLibrary)}
           {item("all", "All Papers", !inReader && view === "all")}
           {item("search", "Search", !inReader && view === "search")}
           {item("discover", "Discover", !inReader && view === "discover")}

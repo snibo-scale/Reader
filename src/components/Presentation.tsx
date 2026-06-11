@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
-import type { Highlight } from "../types";
+import type { Highlight, Paper } from "../types";
 import NoteEditor from "./NoteEditor";
 
 export interface Slide {
   paperId: string;
   paperTitle: string;
   highlight: Highlight;
+}
+
+/** One slide per highlight of a paper, in page order. */
+export function paperSlides(p: Paper): Slide[] {
+  return [...p.highlights]
+    .sort((a, b) => a.page - b.page)
+    .map((h) => ({ paperId: p.id, paperTitle: p.title, highlight: h }));
 }
 
 interface Props {

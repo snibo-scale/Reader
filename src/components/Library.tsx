@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Paper } from "../types";
 import { needsIndexing } from "../lib/indexer";
-import { paperInCategory } from "../lib/connections";
 import { tagTint } from "../lib/colors";
 import { formatAuthors } from "../lib/util";
 import { openPaperWindow } from "../lib/window";
@@ -56,7 +55,6 @@ function PaperCard({ paper, onOpen, onDelete }: CardProps) {
 interface Props {
   papers: Paper[];
   mode: "recent" | "all";
-  activeCategory: string | null;
   importing: boolean;
   importNote: string | null;
   indexProgress: { done: number; total: number } | null;
@@ -72,7 +70,6 @@ interface Props {
 export default function Library({
   papers,
   mode,
-  activeCategory,
   importing,
   importNote,
   indexProgress,
@@ -110,11 +107,7 @@ export default function Library({
   const sorted = [...papers].sort((a, b) => recency(b).localeCompare(recency(a)));
   // Recent = anything opened or added within the past week (recency order preserved).
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const shown = activeCategory
-    ? sorted.filter((p) => paperInCategory(p, activeCategory))
-    : mode === "recent"
-    ? sorted.filter((p) => recency(p) >= weekAgo)
-    : sorted;
+  const shown = mode === "recent" ? sorted.filter((p) => recency(p) >= weekAgo) : sorted;
   const hasGrid = shown.length > 0;
 
   useEffect(() => {
@@ -137,7 +130,7 @@ export default function Library({
       <header className="lib-header">
         <div className="crumbs">
           <strong>My Library</strong> <span className="sep">/</span>{" "}
-          {activeCategory ?? (mode === "all" ? "All Papers" : "Recent")}
+          {mode === "all" ? "All Papers" : "Recent"}
         </div>
         <div className="lib-actions">
           <button className="ghost-btn" onClick={onIndexAll} disabled={indexing || unindexed === 0}>
@@ -194,11 +187,7 @@ export default function Library({
         </div>
       ) : shown.length === 0 ? (
         <div className="empty">
-          <p>
-            {activeCategory
-              ? `No papers tagged "${activeCategory}".`
-              : "Nothing opened or added in the past week — see All Papers."}
-          </p>
+          <p>Nothing opened or added in the past week — see All Papers.</p>
         </div>
       ) : (
         <div className="grid" ref={gridRef}>

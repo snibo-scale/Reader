@@ -3,7 +3,7 @@ import type { Paper } from "../types";
 import { libraryContext, searchPapers } from "../lib/search";
 import { askAi } from "../lib/api";
 import { formatAuthors } from "../lib/util";
-import { getInstructions, getModel, getProvider } from "../lib/settings";
+import { getModel, getProvider, withInstructions } from "../lib/settings";
 import Markdown from "./Markdown";
 
 export default function SearchView({ papers, onOpen }: { papers: Paper[]; onOpen: (id: string) => void }) {
@@ -25,9 +25,9 @@ export default function SearchView({ papers, onOpen }: { papers: Paper[]; onOpen
       await askAi(
         {
           paperId: "",
-          prompt: getInstructions()
-            ? `Instructions: ${getInstructions()}\n\nUsing my research library, answer this question: ${question}\nCite the relevant paper titles in [square brackets]. If the library doesn't cover it, say so.`
-            : `Using my research library, answer this question: ${question}\nCite the relevant paper titles in [square brackets]. If the library doesn't cover it, say so.`,
+          prompt: withInstructions(
+            `Using my research library, answer this question: ${question}\nCite the relevant paper titles in [square brackets]. If the library doesn't cover it, say so.`
+          ),
           context: ctx,
           provider: getProvider(),
           model: getModel(),

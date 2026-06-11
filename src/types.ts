@@ -53,20 +53,17 @@ export interface Paper {
   title: string;
   authors?: string | null;
   year?: string | null;
-  category: string;
   color: string;
   fileName: string;
   addedAt: string;
   lastOpenedAt?: string | null;
-  progress?: number | null;
-  metadataExtracted?: boolean;
   sourceKey?: string | null;
   index?: IndexCard | null;
   /** Extracted references; undefined = not yet extracted, [] = extracted, none found. */
   references?: Reference[] | null;
   highlights: Highlight[];
-  /** Legacy single conversation, migrated into sessions on load. */
-  chat?: ChatMessage[];
+  /** Free-form, paper-level notes not anchored to any highlight. */
+  notes?: string;
   sessions: ChatSession[];
 }
 

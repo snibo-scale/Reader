@@ -12,13 +12,18 @@ interface Props {
  *  when a popover closes or a slide changes. Key it by the highlight id. */
 export default function NoteEditor({ initial, onCommit, placeholder, className, autoFocus }: Props) {
   const [v, setV] = useState(initial);
-  const ref = useRef(initial);
-  ref.current = v;
+  // Commit only on REAL unmount (empty deps), reading the latest props through a
+  // ref. Parents pass fresh inline closures every render, so depending on
+  // `onCommit` would fire the cleanup on every parent re-render — committing
+  // through a stale closure over an old paper and clobbering concurrent changes.
+  const latest = useRef({ v, initial, onCommit });
+  latest.current = { v, initial, onCommit };
   useEffect(
     () => () => {
-      if (ref.current !== initial) onCommit(ref.current);
+      const { v, initial, onCommit } = latest.current;
+      if (v !== initial) onCommit(v);
     },
-    [initial, onCommit]
+    []
   );
   return (
     <textarea

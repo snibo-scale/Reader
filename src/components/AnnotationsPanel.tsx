@@ -1,4 +1,5 @@
 import type { Paper } from "../types";
+import { removeHighlight, setHighlightNote } from "../lib/util";
 import NoteEditor from "./NoteEditor";
 
 interface Props {
@@ -10,10 +11,9 @@ interface Props {
 
 export default function AnnotationsPanel({ paper, onChange, onClose, onJump }: Props) {
   const sorted = [...paper.highlights].sort((a, b) => a.page - b.page);
-  const setNote = (hid: string, note: string) =>
-    onChange({ ...paper, highlights: paper.highlights.map((h) => (h.id === hid ? { ...h, note } : h)) });
-  const remove = (hid: string) =>
-    onChange({ ...paper, highlights: paper.highlights.filter((h) => h.id !== hid) });
+  const setNote = (hid: string, note: string) => onChange(setHighlightNote(paper, hid, note));
+  const remove = (hid: string) => onChange(removeHighlight(paper, hid));
+  const setNotes = (notes: string) => onChange({ ...paper, notes });
 
   return (
     <div className="annot-panel">
@@ -22,6 +22,17 @@ export default function AnnotationsPanel({ paper, onChange, onClose, onJump }: P
         <button className="refs-mini" onClick={onClose} title="Close">
           ✕
         </button>
+      </div>
+
+      <div className="annot-notes">
+        <div className="annot-notes-label">Notes</div>
+        <NoteEditor
+          key={paper.id}
+          className="annot-notes-area"
+          placeholder="General notes on this paper…"
+          initial={paper.notes ?? ""}
+          onCommit={setNotes}
+        />
       </div>
 
       {sorted.length === 0 ? (

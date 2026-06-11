@@ -75,33 +75,6 @@ export function similarInLibrary(text: string, papers: Paper[], limit = 3): { pa
     .slice(0, limit);
 }
 
-/** Topics across the library rolled into categories (case-insensitive), by frequency. */
-export function topicCategories(papers: Paper[]): { name: string; count: number }[] {
-  const counts = new Map<string, number>();
-  const display = new Map<string, string>();
-  for (const p of papers) {
-    if (!p.index) continue;
-    const seen = new Set<string>();
-    for (const raw of p.index.topics) {
-      const name = raw.trim();
-      if (!name) continue;
-      const key = name.toLowerCase();
-      if (!display.has(key)) display.set(key, name);
-      if (seen.has(key)) continue; // count each paper once per topic
-      seen.add(key);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  }
-  return [...counts.entries()]
-    .map(([key, count]) => ({ name: display.get(key)!, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-}
-
-/** Does a paper belong to a topic category (case-insensitive)? */
-export function paperInCategory(p: Paper, category: string): boolean {
-  return !!p.index?.topics.some((t) => t.trim().toLowerCase() === category.toLowerCase());
-}
-
 /** Aggregate reading profile (top topics + keywords) used to seed recommendations. */
 export function readingProfile(papers: Paper[]): { topics: string[]; keywords: string[]; titles: string[] } {
   const topicCount = new Map<string, number>();

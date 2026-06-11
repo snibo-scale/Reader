@@ -3,7 +3,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Highlight, Paper, Rect } from "../types";
 import { extractReferences, readPdfBytes } from "../lib/api";
 import { extractTailText, extractText, loadPdf } from "../lib/pdf";
-import { uid } from "../lib/util";
+import { removeHighlight as withoutHighlight, setHighlightNote, uid } from "../lib/util";
 import { DEFAULT_TINT_COLOR, resolveTint, type TintColor, type TintMode } from "../lib/tints";
 import TintPicker from "./TintPicker";
 import { parseReferences } from "../lib/metadata";
@@ -12,7 +12,7 @@ import PdfPage from "./PdfPage";
 import ChatPanel from "./ChatPanel";
 import RelatedCard from "./RelatedCard";
 import ReferencesPanel from "./ReferencesPanel";
-import Presentation, { type Slide } from "./Presentation";
+import Presentation, { paperSlides } from "./Presentation";
 import NoteEditor from "./NoteEditor";
 import AnnotationsPanel from "./AnnotationsPanel";
 
@@ -109,16 +109,9 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   const [activeNote, setActiveNote] = useState<{ id: string; top: number; left: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const slides: Slide[] = useMemo(
-    () =>
-      [...paper.highlights]
-        .sort((a, b) => a.page - b.page)
-        .map((h) => ({ paperId: paper.id, paperTitle: paper.title, highlight: h })),
-    [paper.highlights, paper.id, paper.title]
-  );
+  const slides = useMemo(() => paperSlides(paper), [paper]);
   const setNote = useCallback(
-    (_pid: string, hid: string, note: string) =>
-      onChange({ ...paper, highlights: paper.highlights.map((h) => (h.id === hid ? { ...h, note } : h)) }),
+    (_pid: string, hid: string, note: string) => onChange(setHighlightNote(paper, hid, note)),
     [paper, onChange]
   );
 
@@ -242,9 +235,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   }, [selection]);
 
   const removeHighlight = useCallback(
-    (id: string) => {
-      onChange({ ...paper, highlights: paper.highlights.filter((h) => h.id !== id) });
-    },
+    (id: string) => onChange(withoutHighlight(paper, id)),
     [paper, onChange]
   );
 

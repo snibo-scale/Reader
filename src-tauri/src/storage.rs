@@ -89,16 +89,11 @@ pub struct Paper {
     pub authors: Option<String>,
     #[serde(default)]
     pub year: Option<String>,
-    pub category: String,
     pub color: String,
     pub file_name: String,
     pub added_at: String,
     #[serde(default)]
     pub last_opened_at: Option<String>,
-    #[serde(default)]
-    pub progress: Option<f64>,
-    #[serde(default)]
-    pub metadata_extracted: bool,
     #[serde(default)]
     pub source_key: Option<String>,
     #[serde(default)]
@@ -107,8 +102,12 @@ pub struct Paper {
     pub references: Option<Vec<Reference>>,
     #[serde(default)]
     pub highlights: Vec<Highlight>,
-    /// Legacy single conversation; migrated into `sessions` on load.
+    /// Free-form, paper-level notes not anchored to any highlight.
     #[serde(default)]
+    pub notes: Option<String>,
+    /// Legacy single conversation; migrated into `sessions` on load and then
+    /// never written back (skipped when empty).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chat: Vec<ChatMessage>,
     #[serde(default)]
     pub sessions: Vec<ChatSession>,
@@ -127,6 +126,12 @@ fn legacy_session_name(msgs: &[ChatMessage]) -> String {
         title
     };
     if title.is_empty() { "Earlier conversation".into() } else { title }
+}
+
+/// UTC now in the same format as JS `Date.toISOString()` ("…​.123Z"), so
+/// timestamps written from Rust and from the frontend compare lexically.
+fn now_iso() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 pub struct Library {
@@ -161,7 +166,13 @@ impl Library {
 
     fn save(&self) {
         if let Ok(s) = serde_json::to_string_pretty(&self.papers) {
-            let _ = std::fs::write(self.dir.join("library.json"), s);
+            // Write-then-rename so a crash mid-write can't corrupt the library.
+            let tmp = self.dir.join("library.json.tmp");
+            let res = std::fs::write(&tmp, s)
+                .and_then(|_| std::fs::rename(&tmp, self.dir.join("library.json")));
+            if let Err(e) = res {
+                eprintln!("failed to save library.json: {e}");
+            }
         }
     }
 
@@ -185,7 +196,7 @@ pub fn list_papers(state: State<'_, Mutex<Library>>) -> Vec<Paper> {
             _ => p.added_at.clone(),
         }
     };
-    v.sort_by(|a, b| recency(b).cmp(&recency(a)));
+    v.sort_by_key(|p| std::cmp::Reverse(recency(p)));
     v
 }
 
@@ -211,16 +222,14 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
         title: stem,
         authors: None,
         year: None,
-        category: "Uncategorized".into(),
         color,
         file_name,
-        added_at: chrono::Utc::now().to_rfc3339(),
+        added_at: now_iso(),
         last_opened_at: None,
-        progress: None,
-        metadata_extracted: false,
         source_key: None,
         index: None,
         highlights: vec![],
+        notes: None,
         chat: vec![],
         sessions: vec![],
         references: None,
@@ -355,13 +364,12 @@ WHERE i.deleted_at IS NULL;";
             Some(IndexCard {
                 summary,
                 keywords: kw,
-                indexed_at: chrono::Utc::now().to_rfc3339(),
+                indexed_at: now_iso(),
                 ..Default::default()
             })
         } else {
             None
         };
-        let has_meta = row.title.is_some();
         let color = COLORS[lib.papers.len() % COLORS.len()].to_string();
 
         let paper = Paper {
@@ -369,16 +377,14 @@ WHERE i.deleted_at IS NULL;";
             title,
             authors: row.authors.clone().filter(|s| !s.is_empty()),
             year: row.year.clone().filter(|s| !s.is_empty() && s != "0"),
-            category: "Uncategorized".into(),
             color,
             file_name,
-            added_at: chrono::Utc::now().to_rfc3339(),
+            added_at: now_iso(),
             last_opened_at: None,
-            progress: None,
-            metadata_extracted: has_meta,
             source_key: if key.is_empty() { None } else { Some(key.clone()) },
             index,
             highlights: vec![],
+            notes: None,
             chat: vec![],
             sessions: vec![],
             references: None,
@@ -397,7 +403,7 @@ fn extract_arxiv_id(s: &str) -> Option<String> {
     for marker in ["/abs/", "/pdf/"] {
         if let Some(pos) = s.find(marker) {
             let id = s[pos + marker.len()..]
-                .split(|c| c == '?' || c == '#' || c == '/')
+                .split(['?', '#', '/'])
                 .next()
                 .unwrap_or("")
                 .trim_end_matches(".pdf");
@@ -415,7 +421,7 @@ fn extract_arxiv_id(s: &str) -> Option<String> {
 }
 
 fn filename_title(url: &str) -> String {
-    let path = url.split(|c| c == '?' || c == '#').next().unwrap_or(url);
+    let path = url.split(['?', '#']).next().unwrap_or(url);
     let seg = path.trim_end_matches('/').rsplit('/').next().unwrap_or("");
     let stem = seg.strip_suffix(".pdf").unwrap_or(seg);
     if stem.is_empty() {
@@ -471,16 +477,14 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         title,
         authors: None,
         year: None,
-        category: "Uncategorized".into(),
         color,
         file_name,
-        added_at: chrono::Utc::now().to_rfc3339(),
+        added_at: now_iso(),
         last_opened_at: None,
-        progress: None,
-        metadata_extracted: false,
         source_key,
         index: None,
         highlights: vec![],
+        notes: None,
         chat: vec![],
         sessions: vec![],
         references: None,

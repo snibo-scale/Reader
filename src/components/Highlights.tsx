@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Paper } from "../types";
 import { tagDotColor } from "../lib/colors";
-import Presentation, { type Slide } from "./Presentation";
+import Presentation, { paperSlides, type Slide } from "./Presentation";
 
 interface Props {
   papers: Paper[];
@@ -17,15 +17,7 @@ export default function Highlights({ papers, onOpen, onUpdateNote }: Props) {
   );
   const total = withHl.reduce((n, p) => n + p.highlights.length, 0);
 
-  const slides: Slide[] = useMemo(
-    () =>
-      withHl.flatMap((p) =>
-        [...p.highlights]
-          .sort((a, b) => a.page - b.page)
-          .map((h) => ({ paperId: p.id, paperTitle: p.title, highlight: h }))
-      ),
-    [withHl]
-  );
+  const slides: Slide[] = useMemo(() => withHl.flatMap(paperSlides), [withHl]);
 
   return (
     <div className="highlights">

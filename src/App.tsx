@@ -10,6 +10,7 @@ import {
   updatePaper,
 } from "./lib/api";
 import { buildIndex, needsIndexing } from "./lib/indexer";
+import { setHighlightNote } from "./lib/util";
 import { getModel, getProvider } from "./lib/settings";
 import Sidebar, { type View } from "./components/Sidebar";
 import Library from "./components/Library";
@@ -25,7 +26,6 @@ export default function App() {
   const [papers, setPapers] = useState<Paper[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [view, setView] = useState<View>("library");
-  const [category, setCategory] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(true);
   const [discoverCache, setDiscoverCache] = useState<DiscoverCache | null>(null);
   const [importing, setImporting] = useState(false);
@@ -60,7 +60,6 @@ export default function App() {
       title: u.title,
       year: u.year,
       authors: u.authors,
-      metadataExtracted: u.metadataExtracted,
       index: u.index,
       references: u.references,
     };
@@ -164,24 +163,29 @@ export default function App() {
   // as un-indexed until both its analysis and references are done; buildIndex runs
   // only the missing steps, so already-indexed papers are skipped.
   const handleIndexAll = useCallback(async () => {
-    const todo = papers.filter(needsIndexing);
+    const todo = papers.filter(needsIndexing).map((p) => p.id);
     if (todo.length === 0) {
       setImportNote("All papers are already indexed");
       return;
     }
     setIndexProgress({ done: 0, total: todo.length });
     for (let i = 0; i < todo.length; i++) {
-      try {
-        const updated = await buildIndex(todo[i], getProvider(), getModel());
-        if (updated) await handleUpdate(updated);
-      } catch {
-        /* skip papers that fail to index */
+      // Re-read the latest paper each iteration: it may have been edited (or
+      // already indexed in the background) since the button was clicked.
+      const current = papersRef.current.find((p) => p.id === todo[i]);
+      if (current && needsIndexing(current) && !indexingRef.current.has(current.id)) {
+        try {
+          const updated = await buildIndex(current, getProvider(), getModel());
+          if (updated) applyIndexResult(current.id, updated);
+        } catch {
+          /* skip papers that fail to index */
+        }
       }
       setIndexProgress({ done: i + 1, total: todo.length });
     }
     setIndexProgress(null);
     setImportNote(`Indexed ${todo.length} paper(s)`);
-  }, [papers, handleUpdate]);
+  }, [papers, applyIndexResult]);
 
   const handleDelete = useCallback(async (id: string) => {
     await deletePaper(id);
@@ -222,24 +226,14 @@ export default function App() {
   const handleUpdateNote = useCallback((paperId: string, highlightId: string, note: string) => {
     const p = papersRef.current.find((x) => x.id === paperId);
     if (!p) return;
-    const updated: Paper = {
-      ...p,
-      highlights: p.highlights.map((h) => (h.id === highlightId ? { ...h, note } : h)),
-    };
+    const updated = setHighlightNote(p, highlightId, note);
     setPapers((list) => list.map((x) => (x.id === paperId ? updated : x)));
     updatePaper(updated);
   }, []);
 
   const navigate = useCallback((v: View) => {
     setActiveId(null);
-    setCategory(null);
     setView(v);
-  }, []);
-
-  const selectCategory = useCallback((c: string | null) => {
-    setActiveId(null);
-    setView("library");
-    setCategory(c);
   }, []);
 
   const active = papers.find((p) => p.id === activeId) ?? null;
@@ -283,7 +277,6 @@ export default function App() {
       <Library
         papers={papers}
         mode={view === "all" ? "all" : "recent"}
-        activeCategory={category}
         importing={importing}
         importNote={importNote}
         indexProgress={indexProgress}
@@ -301,14 +294,11 @@ export default function App() {
   return (
     <div className="app">
       <Sidebar
-        papers={papers}
         view={view}
         inReader={!!active}
-        activeCategory={category}
         collapsed={!navOpen}
         onToggle={() => setNavOpen((o) => !o)}
         onNavigate={navigate}
-        onSelectCategory={selectCategory}
       />
       <main className="main">{main}</main>
     </div>

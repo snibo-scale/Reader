@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { Paper } from "../types";
 import type { Reference } from "../lib/metadata";
 import { arxivSearch, importFromUrl } from "../lib/api";
+import { baseArxivId } from "../lib/util";
 
 type RowState = "idle" | "adding" | "added" | "exists" | "notfound" | "error";
 
@@ -15,7 +16,6 @@ interface Props {
 }
 
 const normTitle = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
-const baseArxiv = (id: string) => id.replace(/v\d+$/i, "").toLowerCase();
 
 export default function ReferencesPanel({ refs, papers, busy, onReload, onClose, onImported }: Props) {
   const [status, setStatus] = useState<Record<number, RowState>>({});
@@ -25,7 +25,7 @@ export default function ReferencesPanel({ refs, papers, busy, onReload, onClose,
     const keys = new Set<string>();
     const titles = new Set<string>();
     for (const p of papers) {
-      if (p.sourceKey) keys.add(baseArxiv(p.sourceKey));
+      if (p.sourceKey) keys.add(baseArxivId(p.sourceKey));
       const t = normTitle(p.title);
       if (t.length > 3) titles.add(t);
     }
@@ -33,7 +33,7 @@ export default function ReferencesPanel({ refs, papers, busy, onReload, onClose,
   }, [papers]);
 
   const inLibrary = (r: Reference) =>
-    (!!r.arxivId && keys.has(baseArxiv(r.arxivId))) || (normTitle(r.title).length > 3 && titles.has(normTitle(r.title)));
+    (!!r.arxivId && keys.has(baseArxivId(r.arxivId))) || (normTitle(r.title).length > 3 && titles.has(normTitle(r.title)));
 
   const add = async (i: number, r: Reference) => {
     setStatus((s) => ({ ...s, [i]: "adding" }));
