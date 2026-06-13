@@ -18,7 +18,6 @@ import Sidebar, { type View } from "./components/Sidebar";
 import Library from "./components/Library";
 import Reader from "./components/Reader";
 import Discover, { type DiscoverCache } from "./components/Discover";
-import GraphCanvas from "./components/GraphCanvas";
 import SearchView from "./components/SearchView";
 import Timeline from "./components/Timeline";
 import Highlights from "./components/Highlights";
@@ -279,8 +278,6 @@ export default function App() {
         onOpen={openPaper}
       />
     );
-  } else if (view === "canvas") {
-    main = <GraphCanvas papers={papers} onOpen={openPaper} />;
   } else if (view === "timeline") {
     main = <Timeline papers={papers} onOpen={openPaper} />;
   } else if (view === "reading") {
@@ -311,6 +308,7 @@ export default function App() {
         onDismissNote={() => setImportNote(null)}
         onOpen={openPaper}
         onDelete={handleDelete}
+        onImported={handleImported}
         lists={lists}
         onChangeLists={commitLists}
       />

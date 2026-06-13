@@ -1,50 +1,12 @@
 import type { Paper } from "../types";
 import { paperTags } from "./canonical";
 
-export interface Edge {
-  a: string;
-  b: string;
-  score: number;
-  shared: string[];
-}
-
 function jaccard(a: Set<string>, b: Set<string>): { score: number; shared: string[] } {
   if (!a.size || !b.size) return { score: 0, shared: [] };
   const shared: string[] = [];
   for (const t of a) if (b.has(t)) shared.push(t);
   const union = new Set([...a, ...b]).size;
   return { score: shared.length / union, shared };
-}
-
-/** All pairwise connections above a threshold (each node keeps its strongest links). */
-export function computeEdges(papers: Paper[], threshold = 0.1, maxPerNode = 4): Edge[] {
-  const tokenMap = new Map<string, Set<string>>();
-  for (const p of papers) tokenMap.set(p.id, paperTags(p));
-
-  const all: Edge[] = [];
-  for (let i = 0; i < papers.length; i++) {
-    for (let j = i + 1; j < papers.length; j++) {
-      const a = papers[i];
-      const b = papers[j];
-      const { score, shared } = jaccard(tokenMap.get(a.id)!, tokenMap.get(b.id)!);
-      if (score >= threshold) all.push({ a: a.id, b: b.id, score, shared });
-    }
-  }
-
-  // Keep only each node's strongest few edges, to avoid a hairball.
-  const kept = new Set<Edge>();
-  const byNode = new Map<string, Edge[]>();
-  for (const e of all) {
-    byNode.set(e.a, [...(byNode.get(e.a) ?? []), e]);
-    byNode.set(e.b, [...(byNode.get(e.b) ?? []), e]);
-  }
-  for (const edges of byNode.values()) {
-    edges
-      .sort((x, y) => y.score - x.score)
-      .slice(0, maxPerNode)
-      .forEach((e) => kept.add(e));
-  }
-  return [...kept];
 }
 
 /** Papers most related to a given paper, strongest first. */

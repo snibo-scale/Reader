@@ -1,6 +1,6 @@
 import Logo from "./Logo";
 
-export type View = "library" | "all" | "reading" | "search" | "discover" | "canvas" | "timeline" | "highlights" | "settings";
+export type View = "library" | "all" | "reading" | "search" | "discover" | "timeline" | "highlights" | "settings";
 
 interface Props {
   view: View;
@@ -48,7 +48,6 @@ export default function Sidebar({ view, inReader, collapsed, onToggle, onNavigat
           {item("reading", "★ Reading Lists", !inReader && view === "reading")}
           {item("search", "Search", !inReader && view === "search")}
           {item("discover", "Discover", !inReader && view === "discover")}
-          {item("canvas", "Canvas", !inReader && view === "canvas")}
           {item("timeline", "Timeline", !inReader && view === "timeline")}
           {item("highlights", "Highlights", !inReader && view === "highlights")}
         </nav>

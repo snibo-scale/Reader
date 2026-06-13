@@ -4,6 +4,7 @@ import { needsIndexing } from "../lib/indexer";
 import { tagTint } from "../lib/colors";
 import { formatAuthors } from "../lib/util";
 import { openPaperWindow } from "../lib/window";
+import ArxivSearch from "./ArxivSearch";
 
 interface CardProps {
   paper: Paper;
@@ -167,6 +168,7 @@ interface Props {
   onDismissNote: () => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  onImported: (p: Paper) => void;
   lists: ReadingList[];
   onChangeLists: (next: ReadingList[]) => void;
 }
@@ -184,11 +186,13 @@ export default function Library({
   onDismissNote,
   onOpen,
   onDelete,
+  onImported,
   lists,
   onChangeLists,
 }: Props) {
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   // Track how many columns currently fit so we can lay cards out row-major
   // (left-to-right, then top-to-bottom) while still packing each column with no
   // vertical gaps — CSS multi-column would pack column-major and break the order.
@@ -247,7 +251,24 @@ export default function Library({
           <button className="ghost-btn" onClick={onImportResearch} disabled={importing}>
             ⇪ Import from Research
           </button>
-          <button className="ghost-btn" onClick={() => setUrlOpen((o) => !o)} disabled={importing}>
+          <button
+            className="ghost-btn"
+            onClick={() => {
+              setSearchOpen((o) => !o);
+              setUrlOpen(false);
+            }}
+            disabled={importing}
+          >
+            🔍 Search arXiv
+          </button>
+          <button
+            className="ghost-btn"
+            onClick={() => {
+              setUrlOpen((o) => !o);
+              setSearchOpen(false);
+            }}
+            disabled={importing}
+          >
             🔗 Add link
           </button>
           <button className="add-btn" onClick={onImport} disabled={importing}>
@@ -276,6 +297,8 @@ export default function Library({
           </button>
         </div>
       )}
+
+      {searchOpen && <ArxivSearch papers={papers} onImported={onImported} />}
 
       {importNote && (
         <div className="import-note">
