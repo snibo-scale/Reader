@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { Paper } from "./types";
+import type { Paper, ReadingList } from "./types";
 import {
   deletePaper,
   importFromResearch,
   importFromUrl,
   importPaper,
   listPapers,
+  listReadingLists,
+  saveReadingLists,
   updatePaper,
 } from "./lib/api";
 import { buildIndex, needsIndexing } from "./lib/indexer";
@@ -20,10 +22,12 @@ import GraphCanvas from "./components/GraphCanvas";
 import SearchView from "./components/SearchView";
 import Timeline from "./components/Timeline";
 import Highlights from "./components/Highlights";
+import ReadingLists from "./components/ReadingLists";
 import SettingsView from "./components/SettingsView";
 
 export default function App() {
   const [papers, setPapers] = useState<Paper[]>([]);
+  const [lists, setLists] = useState<ReadingList[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [view, setView] = useState<View>("library");
   const [navOpen, setNavOpen] = useState(true);
@@ -47,7 +51,16 @@ export default function App() {
   }, [papers]);
 
   const refresh = useCallback(async () => {
-    setPapers(await listPapers());
+    const [ps, ls] = await Promise.all([listPapers(), listReadingLists()]);
+    setPapers(ps);
+    setLists(ls);
+  }, []);
+
+  // Persist the whole reading-list collection in one atomic write; the views build
+  // the next array (create/rename/reorder/membership) and hand it back here.
+  const commitLists = useCallback((next: ReadingList[]) => {
+    setLists(next);
+    saveReadingLists(next);
   }, []);
 
   // Merge an indexing result onto the latest paper (preserving highlights/notes/
@@ -190,6 +203,8 @@ export default function App() {
   const handleDelete = useCallback(async (id: string) => {
     await deletePaper(id);
     setPapers((list) => list.filter((p) => p.id !== id));
+    // Rust prunes the id from lists.json; mirror that in local state.
+    setLists((ls) => ls.map((l) => ({ ...l, paperIds: l.paperIds.filter((pid) => pid !== id) })));
     setActiveId((cur) => (cur === id ? null : cur));
   }, []);
 
@@ -268,6 +283,15 @@ export default function App() {
     main = <GraphCanvas papers={papers} onOpen={openPaper} />;
   } else if (view === "timeline") {
     main = <Timeline papers={papers} onOpen={openPaper} />;
+  } else if (view === "reading") {
+    main = (
+      <ReadingLists
+        papers={papers}
+        lists={lists}
+        onChangeLists={commitLists}
+        onOpen={openPaper}
+      />
+    );
   } else if (view === "highlights") {
     main = <Highlights papers={papers} onOpen={openPaper} onUpdateNote={handleUpdateNote} />;
   } else if (view === "settings") {
@@ -287,6 +311,8 @@ export default function App() {
         onDismissNote={() => setImportNote(null)}
         onOpen={openPaper}
         onDelete={handleDelete}
+        lists={lists}
+        onChangeLists={commitLists}
       />
     );
   }

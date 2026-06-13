@@ -94,6 +94,10 @@ pub struct Paper {
     pub added_at: String,
     #[serde(default)]
     pub last_opened_at: Option<String>,
+    /// Legacy single-list position (v2.0-dev). Migrated into a named reading list
+    /// on load, then cleared and never written again (skipped when None).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reading_order: Option<i64>,
     #[serde(default)]
     pub source_key: Option<String>,
     #[serde(default)]
@@ -111,6 +115,16 @@ pub struct Paper {
     pub chat: Vec<ChatMessage>,
     #[serde(default)]
     pub sessions: Vec<ChatSession>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadingList {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub paper_ids: Vec<String>,
+    pub created_at: String,
 }
 
 fn legacy_session_name(msgs: &[ChatMessage]) -> String {
@@ -137,6 +151,7 @@ fn now_iso() -> String {
 pub struct Library {
     dir: PathBuf,
     papers: Vec<Paper>,
+    lists: Vec<ReadingList>,
 }
 
 impl Library {
@@ -161,7 +176,41 @@ impl Library {
                 });
             }
         }
-        Library { dir, papers }
+
+        let lists_file = dir.join("lists.json");
+        let mut lists = std::fs::read_to_string(&lists_file)
+            .ok()
+            .and_then(|s| serde_json::from_str::<Vec<ReadingList>>(&s).ok())
+            .unwrap_or_default();
+
+        let mut lib = Library { dir, papers, lists: vec![] };
+
+        // One-time migration: fold the legacy single starred list (`reading_order`)
+        // into a named "Reading List", but only if no named lists exist yet.
+        let has_legacy = lib.papers.iter().any(|p| p.reading_order.is_some());
+        if lists.is_empty() && has_legacy {
+            let mut starred: Vec<&Paper> = lib.papers.iter().filter(|p| p.reading_order.is_some()).collect();
+            starred.sort_by_key(|p| p.reading_order.unwrap_or(0));
+            let paper_ids = starred.iter().map(|p| p.id.clone()).collect();
+            lists.push(ReadingList {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: "Reading List".into(),
+                paper_ids,
+                created_at: now_iso(),
+            });
+        }
+        // Clear the legacy field so it's dropped from library.json going forward.
+        let had_legacy = has_legacy;
+        for p in lib.papers.iter_mut() {
+            p.reading_order = None;
+        }
+
+        lib.lists = lists;
+        if had_legacy {
+            lib.save();
+            lib.save_lists();
+        }
+        lib
     }
 
     fn save(&self) {
@@ -172,6 +221,17 @@ impl Library {
                 .and_then(|_| std::fs::rename(&tmp, self.dir.join("library.json")));
             if let Err(e) = res {
                 eprintln!("failed to save library.json: {e}");
+            }
+        }
+    }
+
+    fn save_lists(&self) {
+        if let Ok(s) = serde_json::to_string_pretty(&self.lists) {
+            let tmp = self.dir.join("lists.json.tmp");
+            let res = std::fs::write(&tmp, s)
+                .and_then(|_| std::fs::rename(&tmp, self.dir.join("lists.json")));
+            if let Err(e) = res {
+                eprintln!("failed to save lists.json: {e}");
             }
         }
     }
@@ -226,6 +286,7 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
         file_name,
         added_at: now_iso(),
         last_opened_at: None,
+        reading_order: None,
         source_key: None,
         index: None,
         highlights: vec![],
@@ -381,6 +442,7 @@ WHERE i.deleted_at IS NULL;";
             file_name,
             added_at: now_iso(),
             last_opened_at: None,
+            reading_order: None,
             source_key: if key.is_empty() { None } else { Some(key.clone()) },
             index,
             highlights: vec![],
@@ -481,6 +543,7 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         file_name,
         added_at: now_iso(),
         last_opened_at: None,
+        reading_order: None,
         source_key,
         index: None,
         highlights: vec![],
@@ -520,6 +583,21 @@ pub fn update_paper(state: State<'_, Mutex<Library>>, paper: Paper) -> Result<()
 }
 
 #[tauri::command]
+pub fn list_reading_lists(state: State<'_, Mutex<Library>>) -> Vec<ReadingList> {
+    state.lock().unwrap().lists.clone()
+}
+
+/// Overwrite the whole reading-list collection in one atomic write. The frontend
+/// owns list logic (create/rename/reorder/membership); this just persists the result.
+#[tauri::command]
+pub fn save_reading_lists(state: State<'_, Mutex<Library>>, lists: Vec<ReadingList>) -> Result<(), String> {
+    let mut lib = state.lock().unwrap();
+    lib.lists = lists;
+    lib.save_lists();
+    Ok(())
+}
+
+#[tauri::command]
 pub fn delete_paper(state: State<'_, Mutex<Library>>, id: String) -> Result<(), String> {
     let mut lib = state.lock().unwrap();
     if let Some(pos) = lib.papers.iter().position(|p| p.id == id) {
@@ -527,6 +605,16 @@ pub fn delete_paper(state: State<'_, Mutex<Library>>, id: String) -> Result<(), 
         let _ = std::fs::remove_file(file);
         lib.papers.remove(pos);
         lib.save();
+        // Prune the deleted paper from every reading list.
+        let mut changed = false;
+        for list in lib.lists.iter_mut() {
+            let before = list.paper_ids.len();
+            list.paper_ids.retain(|pid| pid != &id);
+            changed |= list.paper_ids.len() != before;
+        }
+        if changed {
+            lib.save_lists();
+        }
     }
     Ok(())
 }

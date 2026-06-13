@@ -1,10 +1,14 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
-import type { Paper, Provider } from "../types";
+import type { Paper, Provider, ReadingList } from "../types";
 
 export const listPapers = () => invoke<Paper[]>("list_papers");
 export const importPaper = (path: string) => invoke<Paper>("import_paper", { path });
 export const deletePaper = (id: string) => invoke<void>("delete_paper", { id });
 export const updatePaper = (paper: Paper) => invoke<void>("update_paper", { paper });
+
+export const listReadingLists = () => invoke<ReadingList[]>("list_reading_lists");
+export const saveReadingLists = (lists: ReadingList[]) =>
+  invoke<void>("save_reading_lists", { lists });
 
 export const analyzePaper = (text: string, provider: Provider, model: string | null = null) =>
   invoke<string>("analyze_paper", { text, provider, model });

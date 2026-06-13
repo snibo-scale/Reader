@@ -67,4 +67,12 @@ export interface Paper {
   sessions: ChatSession[];
 }
 
+/** A named, user-orderable reading list. `paperIds` is the explicit display order. */
+export interface ReadingList {
+  id: string;
+  name: string;
+  paperIds: string[];
+  createdAt: string;
+}
+
 export type Provider = "claude" | "codex";

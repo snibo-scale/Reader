@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Paper } from "../types";
+import type { Paper, ReadingList } from "../types";
 import { needsIndexing } from "../lib/indexer";
 import { tagTint } from "../lib/colors";
 import { formatAuthors } from "../lib/util";
@@ -7,17 +7,119 @@ import { openPaperWindow } from "../lib/window";
 
 interface CardProps {
   paper: Paper;
+  lists: ReadingList[];
+  onChangeLists: (next: ReadingList[]) => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
-function PaperCard({ paper, onOpen, onDelete }: CardProps) {
+function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete }: CardProps) {
   const topic = paper.index?.topics[0];
   const background = topic ? tagTint(topic) : "var(--paper)";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inAnyList = lists.some((l) => l.paperIds.includes(paper.id));
+
+  // Close the menu on an outside click or Escape. A full-screen backdrop element
+  // can't be used here: as a DOM child of the card it would keep the card stuck in
+  // its :hover state and block hovering other cards.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+        setNewName("");
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        setNewName("");
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  const toggleInList = (listId: string) => {
+    onChangeLists(
+      lists.map((l) => {
+        if (l.id !== listId) return l;
+        const has = l.paperIds.includes(paper.id);
+        return {
+          ...l,
+          paperIds: has ? l.paperIds.filter((id) => id !== paper.id) : [...l.paperIds, paper.id],
+        };
+      })
+    );
+  };
+
+  const createListWith = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const list: ReadingList = {
+      id: crypto.randomUUID(),
+      name,
+      paperIds: [paper.id],
+      createdAt: new Date().toISOString(),
+    };
+    onChangeLists([...lists, list]);
+    setNewName("");
+  };
+
   return (
     <div className="card" style={{ background }} onClick={() => onOpen(paper.id)}>
       <div className="card-top">
         <span className="badge">{paper.year || "—"}</span>
+        <div className="card-list-wrap" ref={wrapRef}>
+          <button
+            className={"card-list-btn" + (inAnyList ? " on" : "") + (menuOpen ? " open" : "")}
+            title="Add to a reading list"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((o) => !o);
+            }}
+          >
+            {inAnyList ? "★" : "⊕"}
+          </button>
+          {menuOpen && (
+            <div className="list-menu" onClick={(e) => e.stopPropagation()}>
+                <div className="list-menu-title">Add to list</div>
+                {lists.length === 0 && <div className="list-menu-empty">No lists yet</div>}
+                {lists.map((l) => {
+                  const has = l.paperIds.includes(paper.id);
+                  return (
+                    <button key={l.id} className="list-menu-item" onClick={() => toggleInList(l.id)}>
+                      <span className="list-menu-check">{has ? "✓" : ""}</span>
+                      <span className="list-menu-name">{l.name}</span>
+                    </button>
+                  );
+                })}
+                <div className="list-menu-new">
+                  <input
+                    value={newName}
+                    placeholder="New list…"
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") createListWith();
+                      if (e.key === "Escape") {
+                        setMenuOpen(false);
+                        setNewName("");
+                      }
+                    }}
+                  />
+                  <button onClick={createListWith} disabled={!newName.trim()}>
+                    +
+                  </button>
+                </div>
+            </div>
+          )}
+        </div>
       </div>
       <div className="card-title">{paper.title}</div>
       <div className="card-author">{formatAuthors(paper.authors)}</div>
@@ -65,6 +167,8 @@ interface Props {
   onDismissNote: () => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  lists: ReadingList[];
+  onChangeLists: (next: ReadingList[]) => void;
 }
 
 export default function Library({
@@ -80,6 +184,8 @@ export default function Library({
   onDismissNote,
   onOpen,
   onDelete,
+  lists,
+  onChangeLists,
 }: Props) {
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
@@ -194,7 +300,14 @@ export default function Library({
           {columns.map((col, ci) => (
             <div className="grid-col" key={ci}>
               {col.map((p) => (
-                <PaperCard key={p.id} paper={p} onOpen={onOpen} onDelete={onDelete} />
+                <PaperCard
+                  key={p.id}
+                  paper={p}
+                  lists={lists}
+                  onChangeLists={onChangeLists}
+                  onOpen={onOpen}
+                  onDelete={onDelete}
+                />
               ))}
             </div>
           ))}

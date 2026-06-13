@@ -26,6 +26,8 @@ pub fn run() {
             storage::import_paper,
             storage::read_pdf_bytes,
             storage::update_paper,
+            storage::list_reading_lists,
+            storage::save_reading_lists,
             storage::delete_paper,
             storage::import_from_research,
             storage::import_from_url,
