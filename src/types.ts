@@ -58,6 +58,8 @@ export interface Paper {
   addedAt: string;
   lastOpenedAt?: string | null;
   sourceKey?: string | null;
+  /** SHA-256 of the PDF bytes; used to detect duplicate imports. */
+  contentHash?: string | null;
   index?: IndexCard | null;
   /** Extracted references; undefined = not yet extracted, [] = extracted, none found. */
   references?: Reference[] | null;

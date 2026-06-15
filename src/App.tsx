@@ -129,6 +129,8 @@ export default function App() {
       const paper = await importPaper(selected);
       setPapers((prev) => [paper, ...prev]);
       ensureIndexed(paper);
+    } catch (e) {
+      setImportNote(String(e));
     } finally {
       setImporting(false);
     }

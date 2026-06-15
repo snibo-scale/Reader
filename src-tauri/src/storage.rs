@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::ipc::Response;
 use tauri::State;
 
@@ -100,6 +101,10 @@ pub struct Paper {
     pub reading_order: Option<i64>,
     #[serde(default)]
     pub source_key: Option<String>,
+    /// SHA-256 of the stored PDF bytes, used to detect duplicate imports across
+    /// every path (file, URL, arXiv, Research). Backfilled on load for older papers.
+    #[serde(default)]
+    pub content_hash: Option<String>,
     #[serde(default)]
     pub index: Option<IndexCard>,
     #[serde(default)]
@@ -146,6 +151,13 @@ fn legacy_session_name(msgs: &[ChatMessage]) -> String {
 /// timestamps written from Rust and from the frontend compare lexically.
 fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// SHA-256 of arbitrary bytes, as a lowercase hex string.
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub struct Library {
@@ -206,11 +218,43 @@ impl Library {
         }
 
         lib.lists = lists;
-        if had_legacy {
+
+        // Backfill content hashes for papers imported before hashing existed, so
+        // duplicate detection works against the whole library.
+        let papers_dir = lib.papers_dir();
+        let mut backfilled = false;
+        for p in lib.papers.iter_mut() {
+            if p.content_hash.is_none() {
+                if let Ok(bytes) = std::fs::read(papers_dir.join(&p.file_name)) {
+                    p.content_hash = Some(sha256_hex(&bytes));
+                    backfilled = true;
+                }
+            }
+        }
+
+        if had_legacy || backfilled {
             lib.save();
+        }
+        if had_legacy {
             lib.save_lists();
         }
         lib
+    }
+
+    /// The first existing paper matching a candidate import by the reliable signals:
+    /// identical PDF bytes (content hash) or the same arXiv id (source key). Title is
+    /// intentionally not matched here — file/URL imports often carry only a filename
+    /// stem, which would cause false positives.
+    fn find_duplicate(&self, hash: &str, source_key: Option<&str>) -> Option<&Paper> {
+        self.papers.iter().find(|p| {
+            if p.content_hash.as_deref() == Some(hash) {
+                return true;
+            }
+            match (source_key, p.source_key.as_deref()) {
+                (Some(k), Some(pk)) => !k.is_empty() && k == pk,
+                _ => false,
+            }
+        })
     }
 
     fn save(&self) {
@@ -271,7 +315,13 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
     let id = uuid::Uuid::new_v4().to_string();
     let file_name = format!("{id}.pdf");
 
+    let bytes = std::fs::read(&src).map_err(|e| format!("read failed: {e}"))?;
+    let hash = sha256_hex(&bytes);
+
     let mut lib = state.lock().unwrap();
+    if let Some(dup) = lib.find_duplicate(&hash, None) {
+        return Err(format!("Already in your library: \"{}\"", dup.title));
+    }
     let papers_dir = lib.papers_dir();
     std::fs::create_dir_all(&papers_dir).map_err(|e| e.to_string())?;
     std::fs::copy(&src, papers_dir.join(&file_name)).map_err(|e| format!("copy failed: {e}"))?;
@@ -288,6 +338,7 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
         last_opened_at: None,
         reading_order: None,
         source_key: None,
+        content_hash: Some(hash),
         index: None,
         highlights: vec![],
         notes: None,
@@ -380,6 +431,8 @@ WHERE i.deleted_at IS NULL;";
         lib.papers.iter().filter_map(|p| p.source_key.clone()).collect();
     let mut titles: std::collections::HashSet<String> =
         lib.papers.iter().map(|p| normalize_title(&p.title)).collect();
+    let mut hashes: std::collections::HashSet<String> =
+        lib.papers.iter().filter_map(|p| p.content_hash.clone()).collect();
 
     let total = rows.len();
     let mut imported = 0usize;
@@ -400,14 +453,25 @@ WHERE i.deleted_at IS NULL;";
         let key = derive_source_key(fp);
         let title = row.title.clone().unwrap_or_else(|| "Untitled".into());
         let ntitle = normalize_title(&title);
-        if (!key.is_empty() && keys.contains(&key)) || (!ntitle.is_empty() && titles.contains(&ntitle)) {
+        let bytes = match std::fs::read(fp) {
+            Ok(b) => b,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
+        let hash = sha256_hex(&bytes);
+        if hashes.contains(&hash)
+            || (!key.is_empty() && keys.contains(&key))
+            || (!ntitle.is_empty() && titles.contains(&ntitle))
+        {
             skipped += 1;
             continue;
         }
 
         let id = uuid::Uuid::new_v4().to_string();
         let file_name = format!("{id}.pdf");
-        if std::fs::copy(fp, lib.papers_dir().join(&file_name)).is_err() {
+        if std::fs::write(lib.papers_dir().join(&file_name), &bytes).is_err() {
             skipped += 1;
             continue;
         }
@@ -444,6 +508,7 @@ WHERE i.deleted_at IS NULL;";
             last_opened_at: None,
             reading_order: None,
             source_key: if key.is_empty() { None } else { Some(key.clone()) },
+            content_hash: Some(hash.clone()),
             index,
             highlights: vec![],
             notes: None,
@@ -453,6 +518,7 @@ WHERE i.deleted_at IS NULL;";
         };
         keys.insert(key);
         titles.insert(ntitle);
+        hashes.insert(hash);
         lib.papers.push(paper);
         imported += 1;
     }
@@ -522,11 +588,10 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         return Err("That URL didn't return a PDF".into());
     }
 
+    let hash = sha256_hex(&bytes);
     let mut lib = state.lock().unwrap();
-    if let Some(k) = &source_key {
-        if lib.papers.iter().any(|p| p.source_key.as_deref() == Some(k.as_str())) {
-            return Err("Already in your library".into());
-        }
+    if let Some(dup) = lib.find_duplicate(&hash, source_key.as_deref()) {
+        return Err(format!("Already in your library: \"{}\"", dup.title));
     }
     let id = uuid::Uuid::new_v4().to_string();
     let file_name = format!("{id}.pdf");
@@ -545,6 +610,7 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         last_opened_at: None,
         reading_order: None,
         source_key,
+        content_hash: Some(hash),
         index: None,
         highlights: vec![],
         notes: None,
