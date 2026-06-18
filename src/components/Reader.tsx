@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import type { Highlight, Paper, Rect } from "../types";
+import type { Highlight, Paper, ReadingList, Rect } from "../types";
 import { extractReferences, readPdfBytes } from "../lib/api";
 import { extractTailText, extractText, loadPdf } from "../lib/pdf";
 import { removeHighlight as withoutHighlight, setHighlightNote, uid } from "../lib/util";
@@ -27,6 +27,8 @@ interface Props {
   onChange: (p: Paper) => void;
   onOpenPaper: (id: string) => void;
   onImported: (p: Paper) => void;
+  lists: ReadingList[];
+  onChangeLists: (next: ReadingList[]) => void;
 }
 
 interface PendingHighlight {
@@ -85,7 +87,7 @@ function selectionTextFromGeometry(range: Range, layer: HTMLElement): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export default function Reader({ paper, papers, indexing, onBack, onChange, onOpenPaper, onImported }: Props) {
+export default function Reader({ paper, papers, indexing, onBack, onChange, onOpenPaper, onImported, lists, onChangeLists }: Props) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [base, setBase] = useState({ w: 612, h: 792 });
@@ -107,7 +109,64 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   const [refsBusy, setRefsBusy] = useState(false);
   const [presenting, setPresenting] = useState(false);
   const [activeNote, setActiveNote] = useState<{ id: string; top: number; left: number } | null>(null);
+  const [listMenuOpen, setListMenuOpen] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const listWrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const inAnyList = lists.some((l) => l.paperIds.includes(paper.id));
+
+  const toggleInList = useCallback(
+    (listId: string) => {
+      onChangeLists(
+        lists.map((l) => {
+          if (l.id !== listId) return l;
+          const has = l.paperIds.includes(paper.id);
+          return {
+            ...l,
+            paperIds: has ? l.paperIds.filter((id) => id !== paper.id) : [...l.paperIds, paper.id],
+          };
+        })
+      );
+    },
+    [lists, paper.id, onChangeLists]
+  );
+
+  const createListWith = useCallback(() => {
+    const name = newListName.trim();
+    if (!name) return;
+    const list: ReadingList = {
+      id: crypto.randomUUID(),
+      name,
+      paperIds: [paper.id],
+      createdAt: new Date().toISOString(),
+    };
+    onChangeLists([...lists, list]);
+    setNewListName("");
+  }, [newListName, lists, paper.id, onChangeLists]);
+
+  // Close the list menu on an outside click or Escape.
+  useEffect(() => {
+    if (!listMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (listWrapRef.current && !listWrapRef.current.contains(e.target as Node)) {
+        setListMenuOpen(false);
+        setNewListName("");
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setListMenuOpen(false);
+        setNewListName("");
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [listMenuOpen]);
 
   const slides = useMemo(() => paperSlides(paper), [paper]);
   const setNote = useCallback(
@@ -267,6 +326,47 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
           <button onClick={() => setScale((s) => Math.max(0.6, +(s - 0.15).toFixed(2)))}>−</button>
           <span className="zoom">{Math.round(scale * 100)}%</span>
           <button onClick={() => setScale((s) => Math.min(3, +(s + 0.15).toFixed(2)))}>+</button>
+          <div className="card-list-wrap reader-list-wrap" ref={listWrapRef}>
+            <button
+              className={"toggle" + (inAnyList ? " current" : "")}
+              onClick={() => setListMenuOpen((o) => !o)}
+              title="Add to a reading list"
+            >
+              {inAnyList ? "★" : "⊕"} List
+            </button>
+            {listMenuOpen && (
+              <div className="list-menu" onClick={(e) => e.stopPropagation()}>
+                <div className="list-menu-title">Add to list</div>
+                {lists.length === 0 && <div className="list-menu-empty">No lists yet</div>}
+                {lists.map((l) => {
+                  const has = l.paperIds.includes(paper.id);
+                  return (
+                    <button key={l.id} className="list-menu-item" onClick={() => toggleInList(l.id)}>
+                      <span className="list-menu-check">{has ? "✓" : ""}</span>
+                      <span className="list-menu-name">{l.name}</span>
+                    </button>
+                  );
+                })}
+                <div className="list-menu-new">
+                  <input
+                    value={newListName}
+                    placeholder="New list…"
+                    onChange={(e) => setNewListName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") createListWith();
+                      if (e.key === "Escape") {
+                        setListMenuOpen(false);
+                        setNewListName("");
+                      }
+                    }}
+                  />
+                  <button onClick={createListWith} disabled={!newListName.trim()}>
+                    +
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <button
             className="toggle"
             onClick={() => setPresenting(true)}

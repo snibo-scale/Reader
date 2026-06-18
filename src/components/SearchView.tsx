@@ -1,15 +1,73 @@
-import { useMemo, useState } from "react";
-import type { Paper } from "../types";
+import { useEffect, useMemo, useState } from "react";
+import type { Paper, ReadingList } from "../types";
 import { libraryContext, searchPapers } from "../lib/search";
 import { askAi } from "../lib/api";
 import { formatAuthors } from "../lib/util";
 import { getModel, getProvider, withInstructions } from "../lib/settings";
 import Markdown from "./Markdown";
 
-export default function SearchView({ papers, onOpen }: { papers: Paper[]; onOpen: (id: string) => void }) {
+interface Props {
+  papers: Paper[];
+  onOpen: (id: string) => void;
+  lists: ReadingList[];
+  onChangeLists: (next: ReadingList[]) => void;
+}
+
+export default function SearchView({ papers, onOpen, lists, onChangeLists }: Props) {
   const [q, setQ] = useState("");
   const [answer, setAnswer] = useState("");
   const [asking, setAsking] = useState(false);
+  // Right-click context menu for adding a result to a reading list.
+  const [menu, setMenu] = useState<{ paperId: string; x: number; y: number } | null>(null);
+  const [newName, setNewName] = useState("");
+
+  const closeMenu = () => {
+    setMenu(null);
+    setNewName("");
+  };
+
+  // Dismiss the menu on an outside click, scroll, or Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest(".list-menu")) closeMenu();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMenu();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+
+  const toggleInList = (listId: string, paperId: string) => {
+    onChangeLists(
+      lists.map((l) => {
+        if (l.id !== listId) return l;
+        const has = l.paperIds.includes(paperId);
+        return {
+          ...l,
+          paperIds: has ? l.paperIds.filter((id) => id !== paperId) : [...l.paperIds, paperId],
+        };
+      })
+    );
+  };
+
+  const createListWith = (paperId: string) => {
+    const name = newName.trim();
+    if (!name) return;
+    const list: ReadingList = {
+      id: crypto.randomUUID(),
+      name,
+      paperIds: [paperId],
+      createdAt: new Date().toISOString(),
+    };
+    onChangeLists([...lists, list]);
+    setNewName("");
+  };
 
   const results = useMemo(() => (q.trim() ? searchPapers(papers, q) : []), [papers, q]);
   const indexedCount = papers.filter((p) => p.index).length;
@@ -87,18 +145,72 @@ export default function SearchView({ papers, onOpen }: { papers: Paper[]; onOpen
             <p>No matches for "{q}".</p>
           </div>
         )}
-        {results.map(({ paper }) => (
-          <button key={paper.id} className="result-row" onClick={() => onOpen(paper.id)}>
-            <div className="result-main">
-              <div className="result-title">{paper.title}</div>
-              <div className="result-meta">
-                {formatAuthors(paper.authors)}
-                {paper.year ? ` · ${paper.year}` : ""}
+        {results.map(({ paper }) => {
+          const inAnyList = lists.some((l) => l.paperIds.includes(paper.id));
+          return (
+            <button
+              key={paper.id}
+              className="result-row"
+              onClick={() => onOpen(paper.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setNewName("");
+                setMenu({ paperId: paper.id, x: e.clientX, y: e.clientY });
+              }}
+            >
+              <div className="result-main">
+                <div className="result-title">
+                  {inAnyList && <span className="result-star" title="In a reading list">★</span>}
+                  {paper.title}
+                </div>
+                <div className="result-meta">
+                  {formatAuthors(paper.authors)}
+                  {paper.year ? ` · ${paper.year}` : ""}
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
+
+      {menu && (
+        <div
+          className="list-menu list-menu-floating"
+          style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="list-menu-title">Add to list</div>
+          {lists.length === 0 && <div className="list-menu-empty">No lists yet</div>}
+          {lists.map((l) => {
+            const has = l.paperIds.includes(menu.paperId);
+            return (
+              <button
+                key={l.id}
+                className="list-menu-item"
+                onClick={() => toggleInList(l.id, menu.paperId)}
+              >
+                <span className="list-menu-check">{has ? "✓" : ""}</span>
+                <span className="list-menu-name">{l.name}</span>
+              </button>
+            );
+          })}
+          <div className="list-menu-new">
+            <input
+              autoFocus
+              value={newName}
+              placeholder="New list…"
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") createListWith(menu.paperId);
+                if (e.key === "Escape") closeMenu();
+              }}
+            />
+            <button onClick={() => createListWith(menu.paperId)} disabled={!newName.trim()}>
+              +
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

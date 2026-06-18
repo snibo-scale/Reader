@@ -266,10 +266,12 @@ export default function App() {
         onChange={handleUpdate}
         onOpenPaper={openPaper}
         onImported={handleImported}
+        lists={lists}
+        onChangeLists={commitLists}
       />
     );
   } else if (view === "search") {
-    main = <SearchView papers={papers} onOpen={openPaper} />;
+    main = <SearchView papers={papers} onOpen={openPaper} lists={lists} onChangeLists={commitLists} />;
   } else if (view === "discover") {
     main = (
       <Discover
