@@ -99,7 +99,7 @@ export default function ReferencesPanel({ refs, papers, busy, onReload, onClose,
             return (
               <div key={i} className={"ref-row" + (have ? " in-lib" : "")}>
                 <div className="ref-main">
-                  <div className="ref-title">{r.title}</div>
+                  <div className="ref-title"><span className="ref-num">{i + 1}.</span> {r.title}</div>
                   <div className="ref-meta">
                     {[r.authors, r.year, r.arxivId && `arXiv:${r.arxivId}`].filter(Boolean).join(" · ")}
                   </div>

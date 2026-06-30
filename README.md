@@ -17,9 +17,12 @@ A local, UNMS-style research-paper reader that integrates with your local **Clau
 
 ```bash
 npm install
-npm run icon      # generates app icons (one-time; needs the deps installed)
 npm run tauri dev # launches the desktop app with hot reload
 ```
+
+App icons are committed. To regenerate them after editing the logo, update
+`assets/icon-source.svg`, export it to `assets/icon-source.png` (1024×1024),
+then run `npm run icon`.
 
 To build a distributable app:
 

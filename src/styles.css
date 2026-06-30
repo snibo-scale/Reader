@@ -304,6 +304,10 @@ button {
   font-weight: 600;
   line-height: 1.35;
 }
+.ref-num {
+  color: var(--muted);
+  font-weight: 400;
+}
 .ref-meta {
   font-size: 12px;
   color: var(--muted);
