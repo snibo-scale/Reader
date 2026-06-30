@@ -6,11 +6,13 @@ interface Props {
   placeholder?: string;
   className?: string;
   autoFocus?: boolean;
+  /** Called after Enter commits (Shift+Enter still inserts a newline). */
+  onSubmit?: () => void;
 }
 
 /** Textarea that commits its value on blur and on unmount, so edits are never lost
  *  when a popover closes or a slide changes. Key it by the highlight id. */
-export default function NoteEditor({ initial, onCommit, placeholder, className, autoFocus }: Props) {
+export default function NoteEditor({ initial, onCommit, placeholder, className, autoFocus, onSubmit }: Props) {
   const [v, setV] = useState(initial);
   // Commit only on REAL unmount (empty deps), reading the latest props through a
   // ref. Parents pass fresh inline closures every render, so depending on
@@ -32,6 +34,13 @@ export default function NoteEditor({ initial, onCommit, placeholder, className, 
       placeholder={placeholder}
       autoFocus={autoFocus}
       onChange={(e) => setV(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          if (v !== initial) onCommit(v);
+          onSubmit?.();
+        }
+      }}
       onBlur={() => {
         if (v !== initial) onCommit(v);
       }}

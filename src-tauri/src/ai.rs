@@ -38,31 +38,6 @@ provided text, say so briefly rather than guessing.\n\n\
     )
 }
 
-fn build_analyze_prompt(text: &str) -> String {
-    let snippet: String = text.chars().take(12_000).collect();
-    format!(
-        "You are building a research index card for an academic paper. Read the text and \
-respond with ONLY a single compact JSON object, no markdown fences and no commentary, in \
-exactly this shape:\n\
-{{\"title\":\"\",\"year\":\"\",\"authors\":[\"\"],\"summary\":\"\",\"topics\":[\"\"],\"methods\":[\"\"],\"keywords\":[\"\"],\"tags\":[\"\"],\"contributions\":[\"\"]}}\n\
-- title: the paper's full title.\n\
-- year: the 4-digit publication year.\n\
-- authors: author full names, in order.\n\
-- summary: a 2-3 sentence plain-language summary.\n\
-- topics: 3-6 broad research areas / subfields.\n\
-- methods: key techniques, models, or algorithms used.\n\
-- keywords: 5-10 specific technical terms.\n\
-- tags: 5-10 CANONICAL concept tags for linking related papers. Normalize aggressively: \
-all lowercase; expand acronyms to their full canonical name (e.g. use \"vision-language-action model\" \
-not \"VLA\", \"reinforcement learning\" not \"RL\", \"vision transformer\" not \"ViT\", \
-\"self-supervised learning\" not \"SSL\"); use the singular, widely-used phrasing; do NOT include \
-paper-specific names, datasets, or benchmarks.\n\
-- contributions: the main contributions, one short phrase each.\n\
-Use empty strings or empty lists for anything you cannot determine.\n\n\
-PAPER TEXT:\n{snippet}\n"
-    )
-}
-
 fn build_queries_prompt(context: &str) -> String {
     format!(
         "A researcher has been reading papers with the topics, keywords, and titles below. \
@@ -170,9 +145,11 @@ async fn run_collect(provider: &str, prompt: String, model: Option<&str>) -> Res
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Run an arbitrary prompt (built by the frontend, e.g. the editable indexing /
+/// references templates) and return the CLI's full stdout.
 #[tauri::command]
-pub async fn analyze_paper(text: String, provider: String, model: Option<String>) -> Result<String, String> {
-    run_collect(&provider, build_analyze_prompt(&text), model.as_deref()).await
+pub async fn run_prompt(prompt: String, provider: String, model: Option<String>) -> Result<String, String> {
+    run_collect(&provider, prompt, model.as_deref()).await
 }
 
 #[tauri::command]
@@ -184,31 +161,6 @@ pub async fn suggest_queries(
     run_collect(&provider, build_queries_prompt(&context), model.as_deref()).await
 }
 
-fn build_refs_prompt(text: &str) -> String {
-    let snippet: String = text.chars().take(60_000).collect();
-    format!(
-        "The text below is the end of an academic paper, including its \
-References / Bibliography. Extract EVERY cited work you can identify. Respond with ONLY a JSON array, \
-each item exactly this shape:\n\
-{{\"title\":\"\",\"authors\":\"\",\"year\":\"\",\"arxivId\":\"\"}}\n\
-- title: the cited paper's title.\n\
-- authors: first author et al. (short).\n\
-- year: 4-digit year if present.\n\
-- arxivId: the arXiv id (e.g. 2401.01234) ONLY if explicitly present in the text, else \"\".\n\
-Include all clearly identifiable references (there may be 100 or more). Do not stop early or \
-summarize. No commentary, no markdown.\n\n\
-TEXT:\n{snippet}\n"
-    )
-}
-
-#[tauri::command]
-pub async fn extract_references(
-    text: String,
-    provider: String,
-    model: Option<String>,
-) -> Result<String, String> {
-    run_collect(&provider, build_refs_prompt(&text), model.as_deref()).await
-}
 
 #[tauri::command]
 pub async fn ask_ai(request: AskRequest, on_event: Channel<AiEvent>) -> Result<(), String> {

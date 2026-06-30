@@ -153,7 +153,8 @@ function PdfPage({
               <div
                 key={`${h.id}-${idx}`}
                 className={"hl" + (h.note ? " has-note" : "")}
-                title={h.note ? h.note : "Click to add a note"}
+                title={h.note ? undefined : "Click to add a note"}
+                data-note={h.note || undefined}
                 style={{
                   left: `${r.x * 100}%`,
                   top: `${r.y * 100}%`,

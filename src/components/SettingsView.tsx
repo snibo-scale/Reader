@@ -1,6 +1,12 @@
 import { useState } from "react";
 import type { Paper } from "../types";
-import { getSettings, saveSettings, type Settings } from "../lib/settings";
+import {
+  getSettings,
+  saveSettings,
+  type Settings,
+  DEFAULT_INDEX_PROMPT,
+  DEFAULT_REFS_PROMPT,
+} from "../lib/settings";
 
 export default function SettingsView({ papers }: { papers: Paper[] }) {
   const [s, setS] = useState<Settings>(getSettings());
@@ -60,6 +66,44 @@ export default function SettingsView({ papers }: { papers: Paper[] }) {
           />
         </div>
         <p className="set-hint">Prepended to chat and search answers to steer tone and length.</p>
+      </section>
+
+      <section className="set-group">
+        <h3>System prompts</h3>
+        <p className="set-hint">
+          The exact prompts sent to the CLI when indexing a paper. <code>{"{{text}}"}</code> is replaced with the
+          (truncated) paper text. Changes apply the next time a paper is indexed or summarized.
+        </p>
+
+        <div className="set-col">
+          <div className="set-col-head">
+            <label>Indexing &amp; summary</label>
+            <button className="set-reset" onClick={() => update({ indexPrompt: DEFAULT_INDEX_PROMPT })}>
+              Reset
+            </button>
+          </div>
+          <textarea
+            className="set-prompt"
+            value={s.indexPrompt}
+            rows={12}
+            onChange={(e) => update({ indexPrompt: e.target.value })}
+          />
+        </div>
+
+        <div className="set-col">
+          <div className="set-col-head">
+            <label>Reference extraction</label>
+            <button className="set-reset" onClick={() => update({ refsPrompt: DEFAULT_REFS_PROMPT })}>
+              Reset
+            </button>
+          </div>
+          <textarea
+            className="set-prompt"
+            value={s.refsPrompt}
+            rows={10}
+            onChange={(e) => update({ refsPrompt: e.target.value })}
+          />
+        </div>
       </section>
 
       <section className="set-group">

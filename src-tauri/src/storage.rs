@@ -95,6 +95,9 @@ pub struct Paper {
     pub added_at: String,
     #[serde(default)]
     pub last_opened_at: Option<String>,
+    /// ISO timestamp when marked read/done; None = unread.
+    #[serde(default)]
+    pub read_at: Option<String>,
     /// Legacy single-list position (v2.0-dev). Migrated into a named reading list
     /// on load, then cleared and never written again (skipped when None).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -336,6 +339,7 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
         file_name,
         added_at: now_iso(),
         last_opened_at: None,
+        read_at: None,
         reading_order: None,
         source_key: None,
         content_hash: Some(hash),
@@ -506,6 +510,7 @@ WHERE i.deleted_at IS NULL;";
             file_name,
             added_at: now_iso(),
             last_opened_at: None,
+        read_at: None,
             reading_order: None,
             source_key: if key.is_empty() { None } else { Some(key.clone()) },
             content_hash: Some(hash.clone()),
@@ -608,6 +613,7 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         file_name,
         added_at: now_iso(),
         last_opened_at: None,
+        read_at: None,
         reading_order: None,
         source_key,
         content_hash: Some(hash),

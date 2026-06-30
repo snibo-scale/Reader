@@ -74,9 +74,10 @@ function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete }: CardProps)
   };
 
   return (
-    <div className="card" style={{ background }} onClick={() => onOpen(paper.id)}>
+    <div className={"card" + (paper.readAt ? " read" : "")} style={{ background }} onClick={() => onOpen(paper.id)}>
       <div className="card-top">
         <span className="badge">{paper.year || "—"}</span>
+        {paper.readAt && <span className="badge read-badge" title="Read">✓ Read</span>}
         <div className="card-list-wrap" ref={wrapRef}>
           <button
             className={"card-list-btn" + (inAnyList ? " on" : "") + (menuOpen ? " open" : "")}

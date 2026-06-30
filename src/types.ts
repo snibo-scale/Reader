@@ -57,6 +57,8 @@ export interface Paper {
   fileName: string;
   addedAt: string;
   lastOpenedAt?: string | null;
+  /** ISO timestamp when marked read/done; null/absent = unread. */
+  readAt?: string | null;
   sourceKey?: string | null;
   /** SHA-256 of the PDF bytes; used to detect duplicate imports. */
   contentHash?: string | null;

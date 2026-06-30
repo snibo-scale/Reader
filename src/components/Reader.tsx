@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Highlight, Paper, ReadingList, Rect } from "../types";
-import { extractReferences, readPdfBytes } from "../lib/api";
+import { analyzePaper, extractReferences, readPdfBytes } from "../lib/api";
 import { extractTailText, extractText, loadPdf } from "../lib/pdf";
 import { removeHighlight as withoutHighlight, setHighlightNote, uid } from "../lib/util";
 import { DEFAULT_TINT_COLOR, resolveTint, type TintColor, type TintMode } from "../lib/tints";
 import TintPicker from "./TintPicker";
-import { parseReferences } from "../lib/metadata";
+import { parseAnalysis, parseReferences } from "../lib/metadata";
+import { applyAnalysis } from "../lib/indexer";
 import { getModel, getProvider } from "../lib/settings";
 import PdfPage from "./PdfPage";
 import ChatPanel from "./ChatPanel";
 import RelatedCard from "./RelatedCard";
 import ReferencesPanel from "./ReferencesPanel";
+import SummaryPanel from "./SummaryPanel";
 import Presentation, { paperSlides } from "./Presentation";
 import NoteEditor from "./NoteEditor";
 import AnnotationsPanel from "./AnnotationsPanel";
@@ -94,7 +96,8 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   const [scale, setScale] = useState(1.4);
   const [paperText, setPaperText] = useState("");
   const [selection, setSelection] = useState<SelectionState | null>(null);
-  const [rightPanel, setRightPanel] = useState<"none" | "chat" | "refs" | "notes">("none");
+  const [rightPanel, setRightPanel] = useState<"none" | "chat" | "refs" | "notes" | "summary">("none");
+  const [summaryBusy, setSummaryBusy] = useState(false);
   const [askContext, setAskContext] = useState("");
   const [tintMode, setTintMode] = useState<TintMode>(
     () => (localStorage.getItem("reader.tintMode") as TintMode) ?? "white"
@@ -189,9 +192,25 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     }
   }, [doc, paper, onChange]);
 
-  const togglePanel = useCallback((p: "chat" | "refs" | "notes") => {
+  const togglePanel = useCallback((p: "chat" | "refs" | "notes" | "summary") => {
     setRightPanel((cur) => (cur === p ? "none" : p));
   }, []);
+
+  // Re-run analysis on demand (e.g. after editing the indexing prompt in Settings).
+  // Indexing also runs automatically in the background on open, so this is the
+  // manual path; the generated summary lands on paper.index.summary.
+  const regenerateSummary = useCallback(async () => {
+    if (!paperText.trim() || summaryBusy) return;
+    setSummaryBusy(true);
+    try {
+      const a = parseAnalysis(await analyzePaper(paperText, getProvider(), getModel()));
+      if (a) onChange(applyAnalysis(paper, a));
+    } catch {
+      /* keep the existing summary */
+    } finally {
+      setSummaryBusy(false);
+    }
+  }, [paperText, summaryBusy, paper, onChange]);
   const jumpToPage = useCallback((page: number) => {
     containerRef.current
       ?.querySelector(`.pdf-page[data-page="${page}"]`)
@@ -368,6 +387,13 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
             )}
           </div>
           <button
+            className={"toggle" + (paper.readAt ? " current" : "")}
+            onClick={() => onChange({ ...paper, readAt: paper.readAt ? null : new Date().toISOString() })}
+            title={paper.readAt ? "Marked read — click to unmark" : "Mark as read"}
+          >
+            {paper.readAt ? "✓ Read" : "○ Mark read"}
+          </button>
+          <button
             className="toggle"
             onClick={() => setPresenting(true)}
             disabled={paper.highlights.length === 0}
@@ -380,6 +406,13 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
             onClick={() => togglePanel("notes")}
           >
             ✎ Notes
+          </button>
+          <button
+            className={"toggle" + (rightPanel === "summary" ? " current" : "")}
+            onClick={() => togglePanel("summary")}
+            title="Paper summary"
+          >
+            ❝ Summary
           </button>
           <button
             className={"toggle" + (rightPanel === "refs" ? " current" : "")}
@@ -430,6 +463,15 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
           />
         )}
 
+        {rightPanel === "summary" && (
+          <SummaryPanel
+            paper={paper}
+            busy={summaryBusy || indexing}
+            onRegenerate={regenerateSummary}
+            onClose={() => setRightPanel("none")}
+          />
+        )}
+
         {rightPanel === "notes" && (
           <AnnotationsPanel
             paper={paper}
@@ -469,6 +511,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
                   placeholder="Add a note…"
                   initial={h.note ?? ""}
                   onCommit={(note) => setNote(paper.id, h.id, note)}
+                  onSubmit={() => setActiveNote(null)}
                 />
                 <div className="note-pop-actions">
                   <button

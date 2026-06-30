@@ -1,5 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import type { Paper, Provider, ReadingList } from "../types";
+import { getIndexPrompt, getRefsPrompt } from "./settings";
 
 export const listPapers = () => invoke<Paper[]>("list_papers");
 export const importPaper = (path: string) => invoke<Paper>("import_paper", { path });
@@ -10,14 +11,26 @@ export const listReadingLists = () => invoke<ReadingList[]>("list_reading_lists"
 export const saveReadingLists = (lists: ReadingList[]) =>
   invoke<void>("save_reading_lists", { lists });
 
+// Truncation limits that used to live in the Rust prompt builders; the frontend
+// now owns the prompt, so it bounds the text it pastes into the template.
+const INDEX_TEXT_LIMIT = 12_000;
+const REFS_TEXT_LIMIT = 60_000;
+
+const fillPrompt = (template: string, text: string, limit: number) =>
+  template.replace("{{text}}", text.slice(0, limit));
+
+/** Run a fully-built prompt through the local CLI and return its raw stdout. */
+export const runPrompt = (prompt: string, provider: Provider, model: string | null = null) =>
+  invoke<string>("run_prompt", { prompt, provider, model });
+
 export const analyzePaper = (text: string, provider: Provider, model: string | null = null) =>
-  invoke<string>("analyze_paper", { text, provider, model });
+  runPrompt(fillPrompt(getIndexPrompt(), text, INDEX_TEXT_LIMIT), provider, model);
 
 export const suggestQueries = (context: string, provider: Provider, model: string | null = null) =>
   invoke<string>("suggest_queries", { context, provider, model });
 
 export const extractReferences = (text: string, provider: Provider, model: string | null = null) =>
-  invoke<string>("extract_references", { text, provider, model });
+  runPrompt(fillPrompt(getRefsPrompt(), text, REFS_TEXT_LIMIT), provider, model);
 
 export interface ArxivPaper {
   id: string;
