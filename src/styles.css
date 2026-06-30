@@ -1159,6 +1159,14 @@ button {
   gap: 8px;
   align-items: center;
 }
+/* Thin separator between logical button groups in the top bars. */
+.bar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
 .ghost-btn {
   background: transparent;
   border: 1px solid var(--line);
@@ -1630,8 +1638,13 @@ button {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 5px 11px;
+  min-width: 32px;
+  height: 30px;
+  padding: 0 8px;
   font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .reader-tools .zoom {
   font-size: 13px;

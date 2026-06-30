@@ -345,13 +345,14 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
           <button onClick={() => setScale((s) => Math.max(0.6, +(s - 0.15).toFixed(2)))}>−</button>
           <span className="zoom">{Math.round(scale * 100)}%</span>
           <button onClick={() => setScale((s) => Math.min(3, +(s + 0.15).toFixed(2)))}>+</button>
+          <span className="bar-divider" />
           <div className="card-list-wrap reader-list-wrap" ref={listWrapRef}>
             <button
               className={"toggle" + (inAnyList ? " current" : "")}
               onClick={() => setListMenuOpen((o) => !o)}
-              title="Add to a reading list"
+              title={inAnyList ? "In a reading list" : "Add to a reading list"}
             >
-              {inAnyList ? "★" : "⊕"} List
+              {inAnyList ? "★" : "⊕"}
             </button>
             {listMenuOpen && (
               <div className="list-menu" onClick={(e) => e.stopPropagation()}>
@@ -391,7 +392,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
             onClick={() => onChange({ ...paper, readAt: paper.readAt ? null : new Date().toISOString() })}
             title={paper.readAt ? "Marked read — click to unmark" : "Mark as read"}
           >
-            {paper.readAt ? "✓ Read" : "○ Mark read"}
+            {paper.readAt ? "✓" : "○"}
           </button>
           <button
             className="toggle"
@@ -399,32 +400,36 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
             disabled={paper.highlights.length === 0}
             title="Present highlights"
           >
-            ▶ Present
+            ▶
           </button>
+          <span className="bar-divider" />
           <button
             className={"toggle" + (rightPanel === "notes" ? " current" : "")}
             onClick={() => togglePanel("notes")}
+            title="Notes &amp; annotations"
           >
-            ✎ Notes
+            ✎
           </button>
           <button
             className={"toggle" + (rightPanel === "summary" ? " current" : "")}
             onClick={() => togglePanel("summary")}
             title="Paper summary"
           >
-            ❝ Summary
+            ❝
           </button>
           <button
             className={"toggle" + (rightPanel === "refs" ? " current" : "")}
             onClick={() => togglePanel("refs")}
+            title="References"
           >
-            ⬇ Refs
+            ⬇
           </button>
           <button
             className={"toggle" + (rightPanel === "chat" ? " current" : "")}
             onClick={() => togglePanel("chat")}
+            title="Ask AI"
           >
-            ✦ AI
+            ✦
           </button>
         </div>
       </header>

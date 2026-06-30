@@ -249,30 +249,38 @@ export default function Library({
               ? `Indexing ${indexProgress!.done}/${indexProgress!.total}…`
               : `✦ Index all${unindexed > 0 ? ` (${unindexed})` : ""}`}
           </button>
-          <button className="ghost-btn" onClick={onImportResearch} disabled={importing}>
-            ⇪ Import from Research
+          <span className="bar-divider" />
+          <button
+            className="ghost-btn"
+            title="Import from the Research (un.ms) app"
+            onClick={onImportResearch}
+            disabled={importing}
+          >
+            ⇪ Research
           </button>
           <button
             className="ghost-btn"
+            title="Search arXiv"
             onClick={() => {
               setSearchOpen((o) => !o);
               setUrlOpen(false);
             }}
             disabled={importing}
           >
-            🔍 Search arXiv
+            ⌕ arXiv
           </button>
           <button
             className="ghost-btn"
+            title="Add by arXiv link, id, or PDF URL"
             onClick={() => {
               setUrlOpen((o) => !o);
               setSearchOpen(false);
             }}
             disabled={importing}
           >
-            🔗 Add link
+            ↗ Link
           </button>
-          <button className="add-btn" onClick={onImport} disabled={importing}>
+          <button className="add-btn" onClick={onImport} disabled={importing} title="Add a PDF from your computer">
             {importing ? "Importing…" : "+ Add item"}
           </button>
         </div>
