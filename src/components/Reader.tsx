@@ -52,25 +52,26 @@ interface SelectionState {
 // of our custom text layer, so the saved quote can miss text even when the
 // highlight bands look right. Reading the geometry keeps text and highlight in sync.
 function selectionTextFromGeometry(range: Range, layer: HTMLElement): string {
-  const selRects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
-  if (!selRects.length) return "";
-
   type Frag = { x: number; y: number; right: number; h: number; text: string };
   const frags: Frag[] = [];
   for (const span of Array.from(layer.querySelectorAll<HTMLSpanElement>("span"))) {
+    if (!range.intersectsNode(span)) continue;
     const sr = span.getBoundingClientRect();
     if (sr.width === 0 || sr.height === 0) continue;
-    const cy = sr.top + sr.height / 2;
-    // Include a span only when its vertical center lands inside a selection rect
-    // (same line — no bleed onto the line above/below) AND most of its width is
-    // horizontally within the selection (so grazed boundary words aren't pulled in).
-    const onSelection = selRects.some((r) => {
-      if (cy < r.top || cy > r.bottom) return false;
-      const ox = Math.max(0, Math.min(sr.right, r.right) - Math.max(sr.left, r.left));
-      return ox >= sr.width * 0.5;
-    });
-    if (!onSelection) continue;
-    frags.push({ x: sr.left, y: sr.top, right: sr.right, h: sr.height, text: span.textContent ?? "" });
+    // Clip to the range's real character offsets so a partially-selected span
+    // contributes exactly its selected chars — not the whole word (≥50% rule
+    // pulled boundary words in/out wholesale, so the saved quote drifted from
+    // the band). The range's start/end containers are these spans' text nodes.
+    const node = span.firstChild;
+    const full = span.textContent ?? "";
+    let text = full;
+    if (node && node.nodeType === Node.TEXT_NODE) {
+      const s = node === range.startContainer ? range.startOffset : 0;
+      const e = node === range.endContainer ? range.endOffset : full.length;
+      text = full.slice(s, e);
+    }
+    if (!text) continue;
+    frags.push({ x: sr.left, y: sr.top, right: sr.right, h: sr.height, text });
   }
 
   frags.sort((a, b) => (Math.abs(a.y - b.y) > Math.min(a.h, b.h) * 0.5 ? a.y - b.y : a.x - b.x));
