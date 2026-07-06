@@ -629,6 +629,118 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
     Ok(paper)
 }
 
+/// A portable backup: every paper (with its highlights, index/summary, references,
+/// notes, and chat sessions) plus the reading lists. PDFs are NOT bundled — they're
+/// redownloaded from arXiv on import, keyed by `source_key`.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Backup {
+    pub version: u32,
+    pub papers: Vec<Paper>,
+    pub lists: Vec<ReadingList>,
+}
+
+/// Write the whole library (metadata + lists) to `path` as one JSON backup file.
+#[tauri::command]
+pub fn export_library(state: State<'_, Mutex<Library>>, path: String) -> Result<usize, String> {
+    let lib = state.lock().unwrap();
+    let backup = Backup {
+        version: 1,
+        papers: lib.papers.clone(),
+        lists: lib.lists.clone(),
+    };
+    let s = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
+    std::fs::write(&path, s).map_err(|e| format!("write failed: {e}"))?;
+    Ok(lib.papers.len())
+}
+
+/// Restore from a backup file: redownload each paper's PDF from arXiv and re-attach
+/// all its annotations/summaries/sessions, then merge the reading lists. Papers that
+/// already exist (same PDF or arXiv id) or have no arXiv source are skipped.
+// ponytail: redownloads from arXiv only; manual-file imports have no source_key and
+// can't be recovered — bundle the PDFs into the export if that matters.
+#[tauri::command]
+pub async fn import_library(
+    state: State<'_, Mutex<Library>>,
+    path: String,
+) -> Result<ImportResult, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("read failed: {e}"))?;
+    let backup: Backup =
+        serde_json::from_str(&text).map_err(|e| format!("Not a valid backup file: {e}"))?;
+
+    // Snapshot existing dedupe signals under a short lock (no lock held across downloads).
+    let (papers_dir, mut hashes, mut keys) = {
+        let lib = state.lock().unwrap();
+        (
+            lib.papers_dir(),
+            lib.papers.iter().filter_map(|p| p.content_hash.clone()).collect::<std::collections::HashSet<_>>(),
+            lib.papers.iter().filter_map(|p| p.source_key.clone()).collect::<std::collections::HashSet<_>>(),
+        )
+    };
+    std::fs::create_dir_all(&papers_dir).ok();
+
+    let client = reqwest::Client::builder()
+        .user_agent("ReaderApp/0.1 (research reader)")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let total = backup.papers.len();
+    let mut skipped = 0usize;
+    let mut ready: Vec<Paper> = vec![];
+
+    for mut p in backup.papers {
+        let already = p.content_hash.as_deref().is_some_and(|h| hashes.contains(h))
+            || p.source_key.as_deref().is_some_and(|k| !k.is_empty() && keys.contains(k));
+        let key = match p.source_key.clone().filter(|k| !k.is_empty()) {
+            Some(k) if !already => k,
+            _ => {
+                skipped += 1;
+                continue;
+            }
+        };
+        let url = format!("https://arxiv.org/pdf/{key}");
+        let bytes = match client.get(&url).send().await {
+            Ok(r) if r.status().is_success() => match r.bytes().await {
+                Ok(b) => b,
+                Err(_) => { skipped += 1; continue; }
+            },
+            _ => { skipped += 1; continue; }
+        };
+        if bytes.len() < 5 || &bytes[..5] != b"%PDF-" {
+            skipped += 1;
+            continue;
+        }
+        let hash = sha256_hex(&bytes);
+        let file_name = format!("{}.pdf", uuid::Uuid::new_v4());
+        if std::fs::write(papers_dir.join(&file_name), &bytes).is_err() {
+            skipped += 1;
+            continue;
+        }
+        p.file_name = file_name;
+        p.content_hash = Some(hash.clone());
+        hashes.insert(hash);
+        keys.insert(key);
+        ready.push(p);
+    }
+
+    let mut lib = state.lock().unwrap();
+    let imported = ready.len();
+    lib.papers.extend(ready);
+    let existing: std::collections::HashSet<String> = lib.lists.iter().map(|l| l.id.clone()).collect();
+    let mut new_lists = false;
+    for l in backup.lists {
+        if !existing.contains(&l.id) {
+            lib.lists.push(l);
+            new_lists = true;
+        }
+    }
+    lib.save();
+    if new_lists {
+        lib.save_lists();
+    }
+    Ok(ImportResult { imported, skipped, total })
+}
+
 #[tauri::command]
 pub fn read_pdf_bytes(state: State<'_, Mutex<Library>>, id: String) -> Result<Response, String> {
     let lib = state.lock().unwrap();
@@ -689,4 +801,66 @@ pub fn delete_paper(state: State<'_, Mutex<Library>>, id: String) -> Result<(), 
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A backup must round-trip every paper field we care about recovering:
+    // highlights, index/summary, references, notes, and chat sessions. If serde
+    // drops any of these, restore silently loses data — this catches that.
+    #[test]
+    fn backup_roundtrip_preserves_annotations() {
+        let paper = Paper {
+            id: "p1".into(),
+            title: "T".into(),
+            authors: Some("A".into()),
+            year: Some("2024".into()),
+            color: "#fff".into(),
+            file_name: "p1.pdf".into(),
+            added_at: "2024-01-01T00:00:00.000Z".into(),
+            last_opened_at: None,
+            read_at: None,
+            reading_order: None,
+            source_key: Some("2401.00001".into()),
+            content_hash: Some("abc".into()),
+            index: Some(IndexCard { summary: "sum".into(), ..Default::default() }),
+            references: Some(vec![Reference {
+                title: "R".into(), authors: "".into(), year: "".into(), arxiv_id: "".into(),
+            }]),
+            highlights: vec![Highlight {
+                id: "h1".into(), page: 1, text: "hi".into(), rects: vec![],
+                color: "#ff0".into(), note: Some("n".into()),
+                created_at: "2024-01-01T00:00:00.000Z".into(),
+            }],
+            notes: Some("paper note".into()),
+            chat: vec![],
+            sessions: vec![ChatSession {
+                id: "s1".into(), name: "chat".into(),
+                created_at: "x".into(), updated_at: "y".into(),
+                messages: vec![ChatMessage {
+                    id: "m1".into(), role: "user".into(), content: "q".into(),
+                    model: "claude".into(), created_at: "z".into(),
+                }],
+            }],
+        };
+        let backup = Backup {
+            version: 1,
+            papers: vec![paper],
+            lists: vec![ReadingList {
+                id: "l1".into(), name: "L".into(),
+                paper_ids: vec!["p1".into()], created_at: "x".into(),
+            }],
+        };
+        let json = serde_json::to_string(&backup).unwrap();
+        let back: Backup = serde_json::from_str(&json).unwrap();
+        let p = &back.papers[0];
+        assert_eq!(p.index.as_ref().unwrap().summary, "sum");
+        assert_eq!(p.highlights[0].note.as_deref(), Some("n"));
+        assert_eq!(p.notes.as_deref(), Some("paper note"));
+        assert_eq!(p.sessions[0].messages[0].content, "q");
+        assert_eq!(p.references.as_ref().unwrap()[0].title, "R");
+        assert_eq!(back.lists[0].paper_ids, vec!["p1".to_string()]);
+    }
 }

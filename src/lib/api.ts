@@ -52,6 +52,9 @@ export interface ImportResult {
 
 export const importFromResearch = () => invoke<ImportResult>("import_from_research");
 
+export const exportLibrary = (path: string) => invoke<number>("export_library", { path });
+export const importLibrary = (path: string) => invoke<ImportResult>("import_library", { path });
+
 export const importFromUrl = (url: string) => invoke<Paper>("import_from_url", { url });
 
 export async function readPdfBytes(id: string): Promise<Uint8Array> {

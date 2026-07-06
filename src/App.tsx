@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Paper, ReadingList } from "./types";
 import {
   deletePaper,
+  exportLibrary,
   importFromResearch,
   importFromUrl,
+  importLibrary,
   importPaper,
   listPapers,
   listReadingLists,
@@ -168,6 +170,39 @@ export default function App() {
     }
   }, [refresh]);
 
+  const handleExport = useCallback(async () => {
+    const path = await save({
+      defaultPath: `reader-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: "Reader backup", extensions: ["json"] }],
+    });
+    if (!path) return;
+    try {
+      const n = await exportLibrary(path);
+      setImportNote(`Exported ${n} paper(s) to backup`);
+    } catch (e) {
+      setImportNote(String(e));
+    }
+  }, []);
+
+  const handleImportBackup = useCallback(async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: "Reader backup", extensions: ["json"] }],
+    });
+    if (!selected || typeof selected !== "string") return;
+    setImporting(true);
+    try {
+      const res = await importLibrary(selected);
+      const tail = res.skipped > 0 ? ` (${res.skipped} skipped)` : "";
+      setImportNote(`Restored ${res.imported} paper(s)${tail}`);
+      await refresh();
+    } catch (e) {
+      setImportNote(String(e));
+    } finally {
+      setImporting(false);
+    }
+  }, [refresh]);
+
   const handleUpdate = useCallback(async (paper: Paper) => {
     setPapers((list) => list.map((p) => (p.id === paper.id ? paper : p)));
     await updatePaper(paper);
@@ -308,6 +343,8 @@ export default function App() {
         onImport={handleImport}
         onImportUrl={handleImportUrl}
         onImportResearch={handleResearchImport}
+        onExport={handleExport}
+        onImportBackup={handleImportBackup}
         onIndexAll={handleIndexAll}
         onDismissNote={() => setImportNote(null)}
         onOpen={openPaper}

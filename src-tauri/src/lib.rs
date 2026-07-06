@@ -31,6 +31,8 @@ pub fn run() {
             storage::delete_paper,
             storage::import_from_research,
             storage::import_from_url,
+            storage::export_library,
+            storage::import_library,
             ai::ask_ai,
             ai::run_prompt,
             ai::suggest_queries,
