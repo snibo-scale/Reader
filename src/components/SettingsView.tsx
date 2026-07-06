@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import type { Paper } from "../types";
 import {
   getSettings,
@@ -18,6 +20,28 @@ export default function SettingsView({ papers }: { papers: Paper[] }) {
 
   const indexed = papers.filter((p) => p.index).length;
   const highlights = papers.reduce((n, p) => n + p.highlights.length, 0);
+
+  const [upd, setUpd] = useState("");
+  const [checking, setChecking] = useState(false);
+  const checkUpdate = async () => {
+    setChecking(true);
+    setUpd("Checking…");
+    try {
+      const update = await check();
+      if (!update) {
+        setUpd("You're on the latest version.");
+        return;
+      }
+      setUpd(`Downloading v${update.version}…`);
+      await update.downloadAndInstall();
+      setUpd("Update installed — restarting…");
+      await relaunch();
+    } catch (e) {
+      setUpd(`Update failed: ${e}`);
+    } finally {
+      setChecking(false);
+    }
+  };
 
   return (
     <div className="settings">
@@ -120,6 +144,18 @@ export default function SettingsView({ papers }: { papers: Paper[] }) {
           </div>
         </div>
         <p className="set-hint">Stored locally at ~/Library/Application Support/com.local.reader/</p>
+      </section>
+
+      <section className="set-group">
+        <h3>Updates</h3>
+        <div className="set-row">
+          <label>App updates</label>
+          <button className="set-reset" onClick={checkUpdate} disabled={checking}>
+            {checking ? "Working…" : "Check for updates"}
+          </button>
+        </div>
+        {upd && <p className="set-hint">{upd}</p>}
+        <p className="set-hint">Downloads and installs the latest release from GitHub, then restarts.</p>
       </section>
     </div>
   );
