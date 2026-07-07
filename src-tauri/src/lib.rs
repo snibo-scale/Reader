@@ -40,6 +40,14 @@ pub fn run() {
             ai::suggest_queries,
             arxiv::arxiv_search,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            // Flush any save still pending from the update_paper debounce.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(lib) = app.try_state::<Mutex<Library>>() {
+                    lib.lock().unwrap().save();
+                }
+            }
+        });
 }

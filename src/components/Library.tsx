@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Paper, ReadingList } from "../types";
-import { needsIndexing } from "../lib/indexer";
+import { needsIndexing } from "../lib/indexStatus";
 import { tagTint } from "../lib/colors";
 import { formatAuthors } from "../lib/util";
 import { openPaperWindow } from "../lib/window";
 import ArxivSearch from "./ArxivSearch";
+import ReadingListMenu from "./ReadingListMenu";
 
 interface CardProps {
   paper: Paper;
@@ -18,7 +19,6 @@ function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete }: CardProps)
   const topic = paper.index?.topics[0];
   const background = topic ? tagTint(topic) : "var(--paper)";
   const [menuOpen, setMenuOpen] = useState(false);
-  const [newName, setNewName] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
   const inAnyList = lists.some((l) => l.paperIds.includes(paper.id));
 
@@ -30,13 +30,11 @@ function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete }: CardProps)
     const onDown = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
-        setNewName("");
       }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setMenuOpen(false);
-        setNewName("");
       }
     };
     document.addEventListener("mousedown", onDown);
@@ -46,32 +44,6 @@ function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete }: CardProps)
       document.removeEventListener("keydown", onKey);
     };
   }, [menuOpen]);
-
-  const toggleInList = (listId: string) => {
-    onChangeLists(
-      lists.map((l) => {
-        if (l.id !== listId) return l;
-        const has = l.paperIds.includes(paper.id);
-        return {
-          ...l,
-          paperIds: has ? l.paperIds.filter((id) => id !== paper.id) : [...l.paperIds, paper.id],
-        };
-      })
-    );
-  };
-
-  const createListWith = () => {
-    const name = newName.trim();
-    if (!name) return;
-    const list: ReadingList = {
-      id: crypto.randomUUID(),
-      name,
-      paperIds: [paper.id],
-      createdAt: new Date().toISOString(),
-    };
-    onChangeLists([...lists, list]);
-    setNewName("");
-  };
 
   return (
     <div className={"card" + (paper.readAt ? " read" : "")} style={{ background }} onClick={() => onOpen(paper.id)}>
@@ -90,36 +62,12 @@ function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete }: CardProps)
             {inAnyList ? "★" : "⊕"}
           </button>
           {menuOpen && (
-            <div className="list-menu" onClick={(e) => e.stopPropagation()}>
-                <div className="list-menu-title">Add to list</div>
-                {lists.length === 0 && <div className="list-menu-empty">No lists yet</div>}
-                {lists.map((l) => {
-                  const has = l.paperIds.includes(paper.id);
-                  return (
-                    <button key={l.id} className="list-menu-item" onClick={() => toggleInList(l.id)}>
-                      <span className="list-menu-check">{has ? "✓" : ""}</span>
-                      <span className="list-menu-name">{l.name}</span>
-                    </button>
-                  );
-                })}
-                <div className="list-menu-new">
-                  <input
-                    value={newName}
-                    placeholder="New list…"
-                    onChange={(e) => setNewName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") createListWith();
-                      if (e.key === "Escape") {
-                        setMenuOpen(false);
-                        setNewName("");
-                      }
-                    }}
-                  />
-                  <button onClick={createListWith} disabled={!newName.trim()}>
-                    +
-                  </button>
-                </div>
-            </div>
+            <ReadingListMenu
+              lists={lists}
+              paperId={paper.id}
+              onChangeLists={onChangeLists}
+              onClose={() => setMenuOpen(false)}
+            />
           )}
         </div>
       </div>
@@ -199,7 +147,7 @@ export default function Library({
   const GAP = 20;
   const gridRef = useRef<HTMLDivElement>(null);
   const [numCols, setNumCols] = useState(1);
-  const unindexed = papers.filter(needsIndexing).length;
+  const unindexed = useMemo(() => papers.filter(needsIndexing).length, [papers]);
   const indexing = indexProgress !== null;
   const submitUrl = () => {
     if (!url.trim()) return;
@@ -213,10 +161,16 @@ export default function Library({
     const opened = p.lastOpenedAt ?? "";
     return opened > added ? opened : added;
   };
-  const sorted = [...papers].sort((a, b) => recency(b).localeCompare(recency(a)));
-  // Recent = anything opened or added within the past week (recency order preserved).
-  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const shown = mode === "recent" ? sorted.filter((p) => recency(p) >= weekAgo) : sorted;
+  const sorted = useMemo(() => [...papers].sort((a, b) => recency(b).localeCompare(recency(a))), [papers]);
+  const shown = useMemo(
+    () => {
+      if (mode !== "recent") return sorted;
+      // Recent = anything opened or added within the past week (recency order preserved).
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      return sorted.filter((p) => recency(p) >= weekAgo);
+    },
+    [mode, sorted]
+  );
   const hasGrid = shown.length > 0;
 
   useEffect(() => {
@@ -231,8 +185,11 @@ export default function Library({
   }, [hasGrid]);
 
   // Round-robin so reading order is left-to-right across a row, then the next row.
-  const columns: Paper[][] = Array.from({ length: numCols }, () => []);
-  shown.forEach((p, i) => columns[i % numCols].push(p));
+  const columns = useMemo(() => {
+    const next: Paper[][] = Array.from({ length: numCols }, () => []);
+    shown.forEach((p, i) => next[i % numCols].push(p));
+    return next;
+  }, [numCols, shown]);
 
   return (
     <div className="library">

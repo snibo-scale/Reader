@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Paper, ReadingList } from "./types";
 import {
@@ -13,18 +13,20 @@ import {
   saveReadingLists,
   updatePaper,
 } from "./lib/api";
-import { buildIndex, needsIndexing } from "./lib/indexer";
+import { needsIndexing } from "./lib/indexStatus";
 import { setHighlightNote } from "./lib/util";
 import { getModel, getProvider } from "./lib/settings";
 import Sidebar, { type View } from "./components/Sidebar";
 import Library from "./components/Library";
-import Reader from "./components/Reader";
-import Discover, { type DiscoverCache } from "./components/Discover";
-import SearchView from "./components/SearchView";
-import Timeline from "./components/Timeline";
-import Highlights from "./components/Highlights";
-import ReadingLists from "./components/ReadingLists";
-import SettingsView from "./components/SettingsView";
+import type { DiscoverCache } from "./components/Discover";
+
+const Reader = lazy(() => import("./components/Reader"));
+const Discover = lazy(() => import("./components/Discover"));
+const SearchView = lazy(() => import("./components/SearchView"));
+const Timeline = lazy(() => import("./components/Timeline"));
+const Highlights = lazy(() => import("./components/Highlights"));
+const ReadingLists = lazy(() => import("./components/ReadingLists"));
+const SettingsView = lazy(() => import("./components/SettingsView"));
 
 export default function App() {
   const [papers, setPapers] = useState<Paper[]>([]);
@@ -89,7 +91,8 @@ export default function App() {
       if (!needsIndexing(paper) || indexingRef.current.has(paper.id)) return;
       indexingRef.current.add(paper.id);
       setIndexingIds(new Set(indexingRef.current));
-      buildIndex(paper, getProvider(), getModel())
+      import("./lib/indexer")
+        .then(({ buildIndex }) => buildIndex(paper, getProvider(), getModel()))
         .then((u) => {
           if (u) applyIndexResult(paper.id, u);
         })
@@ -208,6 +211,7 @@ export default function App() {
       return;
     }
     setIndexProgress({ done: 0, total: todo.length });
+    const { buildIndex } = await import("./lib/indexer");
     for (let i = 0; i < todo.length; i++) {
       // Re-read the latest paper each iteration: it may have been edited (or
       // already indexed in the background) since the button was clicked.
@@ -228,6 +232,8 @@ export default function App() {
 
   const handleDelete = useCallback(async (id: string) => {
     await deletePaper(id);
+    // Dynamic import keeps pdfCache -> pdf.js out of the startup bundle.
+    void import("./lib/pdfCache").then((m) => m.clearPdfCache(id));
     setPapers((list) => list.filter((p) => p.id !== id));
     // Rust prunes the id from lists.json; mirror that in local state.
     setLists((ls) => ls.map((l) => ({ ...l, paperIds: l.paperIds.filter((pid) => pid !== id) })));
@@ -359,7 +365,9 @@ export default function App() {
         onToggle={() => setNavOpen((o) => !o)}
         onNavigate={navigate}
       />
-      <main className="main">{main}</main>
+      <main className="main">
+        <Suspense fallback={<div className="loading">Loading…</div>}>{main}</Suspense>
+      </main>
     </div>
   );
 }

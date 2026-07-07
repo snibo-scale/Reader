@@ -2220,3 +2220,24 @@ button {
   opacity: 0.5;
   cursor: default;
 }
+
+/* Skip layout/paint for offscreen list items in the long scrolling views.
+   ponytail: CSS containment; react-window if libraries hit thousands of items. */
+.card,
+.result-row,
+.hl-group,
+.tl-year {
+  content-visibility: auto;
+}
+.card {
+  contain-intrinsic-size: auto 180px;
+}
+.result-row {
+  contain-intrinsic-size: auto 48px;
+}
+.hl-group {
+  contain-intrinsic-size: auto 220px;
+}
+.tl-year {
+  contain-intrinsic-size: auto 160px;
+}

@@ -3,7 +3,7 @@ use std::process::Stdio;
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
 #[derive(Deserialize)]
@@ -162,10 +162,38 @@ pub async fn suggest_queries(
 }
 
 
+/// Extract the incremental text from one `claude --output-format stream-json` line.
+/// Only stream_event text deltas carry new text; system/assistant/result lines are
+/// ignored so the same content isn't sent twice.
+fn parse_stream_line(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    if v.get("type")?.as_str()? != "stream_event" {
+        return None;
+    }
+    let event = v.get("event")?;
+    if event.get("type")?.as_str()? != "content_block_delta" {
+        return None;
+    }
+    let delta = event.get("delta")?;
+    if delta.get("type")?.as_str()? != "text_delta" {
+        return None;
+    }
+    Some(delta.get("text")?.as_str()?.to_string())
+}
+
 #[tauri::command]
 pub async fn ask_ai(request: AskRequest, on_event: Channel<AiEvent>) -> Result<(), String> {
     let full = build_prompt(&request.context, &request.prompt);
-    let (bin_name, args) = build_invocation(&request.provider, full, request.model.as_deref());
+    let (bin_name, mut args) = build_invocation(&request.provider, full, request.model.as_deref());
+
+    // Token-level streaming: with plain `-p`, claude buffers the whole response and
+    // prints it at the end. stream-json emits deltas as they're generated.
+    let is_claude = bin_name == "claude";
+    if is_claude {
+        for flag in ["--output-format", "stream-json", "--verbose", "--include-partial-messages"] {
+            args.push(flag.into());
+        }
+    }
 
     let mut child = Command::new(resolved_bin(bin_name))
         .args(&args)
@@ -179,21 +207,24 @@ pub async fn ask_ai(request: AskRequest, on_event: Channel<AiEvent>) -> Result<(
             format!("failed to launch `{bin_name}`: {e}. Make sure the CLI is installed and on your PATH.")
         })?;
 
-    let mut stdout = child.stdout.take().ok_or("no stdout handle")?;
+    let stdout = child.stdout.take().ok_or("no stdout handle")?;
     let mut stderr = child.stderr.take().ok_or("no stderr handle")?;
 
-    // Stream stdout chunks to the frontend as they arrive.
+    // Stream stdout to the frontend: claude emits stream-json lines we reduce to
+    // text deltas; codex output is forwarded line-by-line as-is.
     let stdout_channel = on_event.clone();
     let stdout_task = tokio::spawn(async move {
-        let mut buf = [0u8; 2048];
-        loop {
-            match stdout.read(&mut buf).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-                    let _ = stdout_channel.send(AiEvent::Chunk { text });
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let text = if is_claude {
+                match parse_stream_line(&line) {
+                    Some(t) => t,
+                    None => continue,
                 }
-            }
+            } else {
+                format!("{line}\n")
+            };
+            let _ = stdout_channel.send(AiEvent::Chunk { text });
         }
     });
 
@@ -215,4 +246,26 @@ pub async fn ask_ai(request: AskRequest, on_event: Channel<AiEvent>) -> Result<(
 
     let _ = on_event.send(AiEvent::Done);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_stream_line;
+
+    #[test]
+    fn stream_line_parsing() {
+        let delta = r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}"#;
+        assert_eq!(parse_stream_line(delta), Some("Hello".to_string()));
+
+        // Non-delta events must be ignored (their text would double-send).
+        let assistant = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}"#;
+        assert_eq!(parse_stream_line(assistant), None);
+        let system = r#"{"type":"system","subtype":"init"}"#;
+        assert_eq!(parse_stream_line(system), None);
+        let result = r#"{"type":"result","result":"Hello"}"#;
+        assert_eq!(parse_stream_line(result), None);
+        let other_delta = r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{}"}}}"#;
+        assert_eq!(parse_stream_line(other_delta), None);
+        assert_eq!(parse_stream_line("not json"), None);
+    }
 }

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Highlight, Paper, ReadingList, Rect } from "../types";
-import { analyzePaper, extractReferences, readPdfBytes } from "../lib/api";
-import { extractHeadings, extractTailText, extractText, loadPdf, type Heading } from "../lib/pdf";
+import { analyzePaper, extractReferences } from "../lib/api";
+import { extractTailText, type Heading } from "../lib/pdf";
+import { getPdfDoc, getPdfHeadings, getPdfText } from "../lib/pdfCache";
 import { removeHighlight as withoutHighlight, setHighlightNote, uid } from "../lib/util";
 import { DEFAULT_TINT_COLOR, resolveTint, type TintColor, type TintMode } from "../lib/tints";
 import TintPicker from "./TintPicker";
@@ -18,6 +19,7 @@ import Presentation, { paperSlides } from "./Presentation";
 import NoteEditor from "./NoteEditor";
 import AnnotationsPanel from "./AnnotationsPanel";
 import TocPanel from "./TocPanel";
+import ReadingListMenu from "./ReadingListMenu";
 
 const HL_COLOR = "#f2c94c";
 const NO_HIGHLIGHTS: Highlight[] = [];
@@ -116,40 +118,10 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   const [presenting, setPresenting] = useState(false);
   const [activeNote, setActiveNote] = useState<{ id: string; top: number; left: number } | null>(null);
   const [listMenuOpen, setListMenuOpen] = useState(false);
-  const [newListName, setNewListName] = useState("");
   const listWrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const inAnyList = lists.some((l) => l.paperIds.includes(paper.id));
-
-  const toggleInList = useCallback(
-    (listId: string) => {
-      onChangeLists(
-        lists.map((l) => {
-          if (l.id !== listId) return l;
-          const has = l.paperIds.includes(paper.id);
-          return {
-            ...l,
-            paperIds: has ? l.paperIds.filter((id) => id !== paper.id) : [...l.paperIds, paper.id],
-          };
-        })
-      );
-    },
-    [lists, paper.id, onChangeLists]
-  );
-
-  const createListWith = useCallback(() => {
-    const name = newListName.trim();
-    if (!name) return;
-    const list: ReadingList = {
-      id: crypto.randomUUID(),
-      name,
-      paperIds: [paper.id],
-      createdAt: new Date().toISOString(),
-    };
-    onChangeLists([...lists, list]);
-    setNewListName("");
-  }, [newListName, lists, paper.id, onChangeLists]);
 
   // Close the list menu on an outside click or Escape.
   useEffect(() => {
@@ -157,13 +129,11 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     const onDown = (e: MouseEvent) => {
       if (listWrapRef.current && !listWrapRef.current.contains(e.target as Node)) {
         setListMenuOpen(false);
-        setNewListName("");
       }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setListMenuOpen(false);
-        setNewListName("");
       }
     };
     document.addEventListener("mousedown", onDown);
@@ -243,8 +213,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const bytes = await readPdfBytes(paper.id);
-      const d = await loadPdf(bytes);
+      const d = await getPdfDoc(paper.id);
       if (cancelled) return;
       setDoc(d);
       setNumPages(d.numPages);
@@ -253,10 +222,10 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
         const v = p.getViewport({ scale: 1 });
         setBase({ w: v.width, h: v.height });
       });
-      extractText(d).then((t) => {
+      getPdfText(paper.id, d).then((t) => {
         if (!cancelled) setPaperText(t);
       });
-      extractHeadings(d).then((h) => {
+      getPdfHeadings(paper.id, d).then((h) => {
         if (!cancelled) setHeadings(h);
       });
     })();
@@ -370,36 +339,12 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
               {inAnyList ? "★" : "⊕"}
             </button>
             {listMenuOpen && (
-              <div className="list-menu" onClick={(e) => e.stopPropagation()}>
-                <div className="list-menu-title">Add to list</div>
-                {lists.length === 0 && <div className="list-menu-empty">No lists yet</div>}
-                {lists.map((l) => {
-                  const has = l.paperIds.includes(paper.id);
-                  return (
-                    <button key={l.id} className="list-menu-item" onClick={() => toggleInList(l.id)}>
-                      <span className="list-menu-check">{has ? "✓" : ""}</span>
-                      <span className="list-menu-name">{l.name}</span>
-                    </button>
-                  );
-                })}
-                <div className="list-menu-new">
-                  <input
-                    value={newListName}
-                    placeholder="New list…"
-                    onChange={(e) => setNewListName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") createListWith();
-                      if (e.key === "Escape") {
-                        setListMenuOpen(false);
-                        setNewListName("");
-                      }
-                    }}
-                  />
-                  <button onClick={createListWith} disabled={!newListName.trim()}>
-                    +
-                  </button>
-                </div>
-              </div>
+              <ReadingListMenu
+                lists={lists}
+                paperId={paper.id}
+                onChangeLists={onChangeLists}
+                onClose={() => setListMenuOpen(false)}
+              />
             )}
           </div>
           <button

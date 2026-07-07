@@ -13,5 +13,8 @@ export default defineConfig({
   build: {
     target: "es2021",
     sourcemap: false,
+    // No manualChunks: pdfjs-dist and react-markdown are only reachable from
+    // lazy views, so the natural code-split already isolates them — the object
+    // form also hoisted react into the markdown chunk, bloating startup.
   },
 });

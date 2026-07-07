@@ -1,10 +1,11 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::ipc::Response;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -260,7 +261,7 @@ impl Library {
         })
     }
 
-    fn save(&self) {
+    pub fn save(&self) {
         if let Ok(s) = serde_json::to_string_pretty(&self.papers) {
             // Write-then-rename so a crash mid-write can't corrupt the library.
             let tmp = self.dir.join("library.json.tmp");
@@ -753,13 +754,36 @@ pub fn read_pdf_bytes(state: State<'_, Mutex<Library>>, id: String) -> Result<Re
     Ok(Response::new(bytes))
 }
 
+// Generation counter for debounced saves: each update bumps it, and a scheduled
+// save only writes if no newer update has arrived in the meantime.
+static SAVE_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// Persist `library.json` after ~500ms of quiet instead of on every mutation —
+/// highlight/note edits fire update_paper per keystroke and each save rewrites
+/// the whole file. A final save on app exit flushes anything still pending.
+/// ponytail: 500ms debounce, a hard crash loses at most the last 500ms of edits.
+fn schedule_save(app: tauri::AppHandle) {
+    let gen = SAVE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        if SAVE_GEN.load(Ordering::SeqCst) == gen {
+            app.state::<Mutex<Library>>().lock().unwrap().save();
+        }
+    });
+}
+
 #[tauri::command]
-pub fn update_paper(state: State<'_, Mutex<Library>>, paper: Paper) -> Result<(), String> {
+pub fn update_paper(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<Library>>,
+    paper: Paper,
+) -> Result<(), String> {
     let mut lib = state.lock().unwrap();
     match lib.papers.iter_mut().find(|p| p.id == paper.id) {
         Some(slot) => {
             *slot = paper;
-            lib.save();
+            drop(lib);
+            schedule_save(app);
             Ok(())
         }
         None => Err("paper not found".into()),

@@ -1,9 +1,11 @@
 import type { Analysis } from "./metadata";
 import type { Paper, Provider } from "../types";
-import { analyzePaper, extractReferences, readPdfBytes } from "./api";
-import { extractTailText, extractText, loadPdf } from "./pdf";
+import { analyzePaper, extractReferences } from "./api";
+import { getPdfDoc, getPdfText } from "./pdfCache";
+import { extractTailText } from "./pdf";
 import { parseAnalysis, parseReferences } from "./metadata";
 import { canonicalTag } from "./canonical";
+import { needsAnalysis, needsIndexing, needsReferences } from "./indexStatus";
 
 /** Merge an LLM analysis into a paper (metadata + index card). */
 export function applyAnalysis(paper: Paper, a: Analysis): Paper {
@@ -24,24 +26,7 @@ export function applyAnalysis(paper: Paper, a: Analysis): Paper {
   };
 }
 
-/** Analysis (summary/topics/metadata) hasn't been generated yet. */
-export function needsAnalysis(p: Paper): boolean {
-  return !p.index || p.index.topics.length === 0;
-}
-
-/** References haven't been extracted yet (null/undefined; [] means "extracted, none"). */
-export function needsReferences(p: Paper): boolean {
-  return p.references == null;
-}
-
-/**
- * A paper isn't fully indexed until BOTH its analysis and its references are
- * done. Reference extraction is part of indexing, so a paper missing either
- * step still "needs indexing" and is picked up by Index all.
- */
-export function needsIndexing(p: Paper): boolean {
-  return needsAnalysis(p) || needsReferences(p);
-}
+export { needsAnalysis, needsIndexing, needsReferences };
 
 /**
  * Index a paper from disk: run ONLY the steps that haven't been done yet
@@ -55,14 +40,13 @@ export async function buildIndex(
   model: string | null = null
 ): Promise<Paper | null> {
   if (!needsIndexing(paper)) return null;
-  const bytes = await readPdfBytes(paper.id);
-  const doc = await loadPdf(bytes);
+  const doc = await getPdfDoc(paper.id);
   let next = paper;
   let changed = false;
 
   if (needsAnalysis(next)) {
     try {
-      const text = await extractText(doc);
+      const text = await getPdfText(paper.id, doc);
       if (text.trim()) {
         const a = parseAnalysis(await analyzePaper(text, provider, model));
         if (a) {

@@ -45,25 +45,18 @@ async function textBetween(
   return out.slice(0, maxChars);
 }
 
-/**
- * Text of the references section: from the References/Bibliography/Works Cited
- * heading to the next section (or the document end). Falls back to the last
- * `tailPages` pages when no such heading is detected.
- */
-export async function extractTailText(doc: PDFDocumentProxy, tailPages = 16, maxChars = 60000): Promise<string> {
-  const heads = await extractHeadings(doc);
-  const refIdx = heads.findIndex((h) => REFS_HEADING.test(h.text.trim()));
-  if (refIdx >= 0) {
-    const between = await textBetween(doc, heads[refIdx], heads[refIdx + 1], maxChars);
-    if (between.trim()) return between;
-  }
-  // Fallback: no heading detected — scan the tail pages.
-  const start = Math.max(1, doc.numPages - tailPages + 1);
+async function extractPagesText(
+  doc: PDFDocumentProxy,
+  startPage: number,
+  endPage: number,
+  maxChars: number
+): Promise<string> {
   let out = "";
-  for (let i = start; i <= doc.numPages; i++) {
+  for (let i = startPage; i <= endPage; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
     out += content.items.map((it) => ("str" in it ? it.str : "")).join(" ") + "\n";
+    if (out.length > maxChars) break;
   }
   return out.slice(-maxChars);
 }
@@ -94,13 +87,17 @@ export function looksLikeSection(text: string): boolean {
 // body text are treated as candidates, then filtered to ones that read like a
 // real section (looksLikeSection). No embedded outline is required (most arXiv
 // PDFs lack one), so this reads the geometry PDF.js already gives us.
-export async function extractHeadings(doc: PDFDocumentProxy): Promise<Heading[]> {
+async function extractHeadingsRange(
+  doc: PDFDocumentProxy,
+  startPage: number,
+  endPage: number
+): Promise<Heading[]> {
   const Util = (pdfjsLib as unknown as { Util: { transform: (a: number[], b: number[]) => number[] } }).Util;
   type Line = { page: number; yFrac: number; size: number; text: string };
   const lines: Line[] = [];
   const sizeChars = new Map<number, number>(); // rounded size -> total chars (body = the mode)
 
-  for (let i = 1; i <= doc.numPages; i++) {
+  for (let i = startPage; i <= endPage; i++) {
     const page = await doc.getPage(i);
     const vp = page.getViewport({ scale: 1 });
     const content = await page.getTextContent();
@@ -143,6 +140,37 @@ export async function extractHeadings(doc: PDFDocumentProxy): Promise<Heading[]>
 
   const sizes = [...new Set(kept.map((h) => h.size))].sort((a, b) => b - a);
   return kept.map((h) => ({ text: h.text, page: h.page, yFrac: h.yFrac, level: sizes.indexOf(h.size) }));
+}
+
+export async function extractHeadings(doc: PDFDocumentProxy): Promise<Heading[]> {
+  return extractHeadingsRange(doc, 1, doc.numPages);
+}
+
+/**
+ * Text of the references section: from the References/Bibliography/Works Cited
+ * heading to the next section (or the document end). Checks the tail pages first
+ * so ordinary papers avoid a full-document heading scan.
+ */
+export async function extractTailText(doc: PDFDocumentProxy, tailPages = 16, maxChars = 60000): Promise<string> {
+  const start = Math.max(1, doc.numPages - tailPages + 1);
+  const tailHeads = await extractHeadingsRange(doc, start, doc.numPages);
+  const tailRefIdx = tailHeads.findIndex((h) => REFS_HEADING.test(h.text.trim()));
+  if (tailRefIdx >= 0) {
+    const between = await textBetween(doc, tailHeads[tailRefIdx], tailHeads[tailRefIdx + 1], maxChars);
+    if (between.trim()) return between;
+  }
+
+  const tailText = await extractPagesText(doc, start, doc.numPages, maxChars);
+  if (tailText.split(/\n+/).some((line) => REFS_HEADING.test(line.trim()))) return tailText;
+
+  const heads = start > 1 ? await extractHeadingsRange(doc, 1, start - 1) : [];
+  const refIdx = heads.findIndex((h) => REFS_HEADING.test(h.text.trim()));
+  if (refIdx >= 0) {
+    const between = await textBetween(doc, heads[refIdx], heads[refIdx + 1] ?? tailHeads[0], maxChars);
+    if (between.trim()) return between;
+  }
+
+  return tailText;
 }
 
 export async function extractText(doc: PDFDocumentProxy, maxChars = 48000): Promise<string> {

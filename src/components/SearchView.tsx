@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import type { Paper, ReadingList } from "../types";
 import { libraryContext, searchPapers } from "../lib/search";
 import { askAi } from "../lib/api";
 import { formatAuthors } from "../lib/util";
 import { getModel, getProvider, withInstructions } from "../lib/settings";
 import Markdown from "./Markdown";
+import ReadingListMenu from "./ReadingListMenu";
 
 interface Props {
   papers: Paper[];
@@ -19,11 +20,9 @@ export default function SearchView({ papers, onOpen, lists, onChangeLists }: Pro
   const [asking, setAsking] = useState(false);
   // Right-click context menu for adding a result to a reading list.
   const [menu, setMenu] = useState<{ paperId: string; x: number; y: number } | null>(null);
-  const [newName, setNewName] = useState("");
 
   const closeMenu = () => {
     setMenu(null);
-    setNewName("");
   };
 
   // Dismiss the menu on an outside click, scroll, or Escape.
@@ -43,33 +42,9 @@ export default function SearchView({ papers, onOpen, lists, onChangeLists }: Pro
     };
   }, [menu]);
 
-  const toggleInList = (listId: string, paperId: string) => {
-    onChangeLists(
-      lists.map((l) => {
-        if (l.id !== listId) return l;
-        const has = l.paperIds.includes(paperId);
-        return {
-          ...l,
-          paperIds: has ? l.paperIds.filter((id) => id !== paperId) : [...l.paperIds, paperId],
-        };
-      })
-    );
-  };
-
-  const createListWith = (paperId: string) => {
-    const name = newName.trim();
-    if (!name) return;
-    const list: ReadingList = {
-      id: crypto.randomUUID(),
-      name,
-      paperIds: [paperId],
-      createdAt: new Date().toISOString(),
-    };
-    onChangeLists([...lists, list]);
-    setNewName("");
-  };
-
-  const results = useMemo(() => (q.trim() ? searchPapers(papers, q) : []), [papers, q]);
+  // Deferred so typing stays responsive; the library scan lags a keystroke behind.
+  const dq = useDeferredValue(q);
+  const results = useMemo(() => (dq.trim() ? searchPapers(papers, dq) : []), [papers, dq]);
   const indexedCount = papers.filter((p) => p.index).length;
 
   const ask = async () => {
@@ -154,7 +129,6 @@ export default function SearchView({ papers, onOpen, lists, onChangeLists }: Pro
               onClick={() => onOpen(paper.id)}
               onContextMenu={(e) => {
                 e.preventDefault();
-                setNewName("");
                 setMenu({ paperId: paper.id, x: e.clientX, y: e.clientY });
               }}
             >
@@ -174,42 +148,15 @@ export default function SearchView({ papers, onOpen, lists, onChangeLists }: Pro
       </div>
 
       {menu && (
-        <div
-          className="list-menu list-menu-floating"
+        <ReadingListMenu
+          lists={lists}
+          paperId={menu.paperId}
+          onChangeLists={onChangeLists}
+          onClose={closeMenu}
+          autoFocusNewList
+          className="list-menu-floating"
           style={{ left: menu.x, top: menu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="list-menu-title">Add to list</div>
-          {lists.length === 0 && <div className="list-menu-empty">No lists yet</div>}
-          {lists.map((l) => {
-            const has = l.paperIds.includes(menu.paperId);
-            return (
-              <button
-                key={l.id}
-                className="list-menu-item"
-                onClick={() => toggleInList(l.id, menu.paperId)}
-              >
-                <span className="list-menu-check">{has ? "✓" : ""}</span>
-                <span className="list-menu-name">{l.name}</span>
-              </button>
-            );
-          })}
-          <div className="list-menu-new">
-            <input
-              autoFocus
-              value={newName}
-              placeholder="New list…"
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") createListWith(menu.paperId);
-                if (e.key === "Escape") closeMenu();
-              }}
-            />
-            <button onClick={() => createListWith(menu.paperId)} disabled={!newName.trim()}>
-              +
-            </button>
-          </div>
-        </div>
+        />
       )}
     </div>
   );

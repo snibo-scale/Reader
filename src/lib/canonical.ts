@@ -62,8 +62,19 @@ const ALIASES: Record<string, string> = {
   "embodied intelligence": "embodied ai",
 };
 
+// Tag vocabulary is small and finite; memoize the regex-heavy normalization.
+const canonicalCache = new Map<string, string>();
+
 /** Normalize a raw tag and resolve it to its canonical form. */
 export function canonicalTag(raw: string): string {
+  const hit = canonicalCache.get(raw);
+  if (hit !== undefined) return hit;
+  const result = computeCanonical(raw);
+  canonicalCache.set(raw, result);
+  return result;
+}
+
+function computeCanonical(raw: string): string {
   const key = raw
     .toLowerCase()
     .replace(/[-_/]/g, " ")
