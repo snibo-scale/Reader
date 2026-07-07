@@ -120,6 +120,13 @@ export default function App() {
     })();
   }, [refresh]);
 
+  // Import/backup notices auto-dismiss after a few seconds (they also fade via CSS).
+  useEffect(() => {
+    if (!importNote) return;
+    const t = setTimeout(() => setImportNote(null), 4000);
+    return () => clearTimeout(t);
+  }, [importNote]);
+
   const handleImport = useCallback(async () => {
     const selected = await open({
       multiple: false,
@@ -152,23 +159,6 @@ export default function App() {
       setImporting(false);
     }
   }, [ensureIndexed]);
-
-  const handleResearchImport = useCallback(async () => {
-    setImporting(true);
-    try {
-      const res = await importFromResearch();
-      setImportNote(
-        res.imported > 0
-          ? `Imported ${res.imported} new paper(s)`
-          : "No new papers to import — library is up to date"
-      );
-      await refresh();
-    } catch (e) {
-      setImportNote(String(e));
-    } finally {
-      setImporting(false);
-    }
-  }, [refresh]);
 
   const handleExport = useCallback(async () => {
     const path = await save({
@@ -331,7 +321,14 @@ export default function App() {
   } else if (view === "highlights") {
     main = <Highlights papers={papers} onOpen={openPaper} onUpdateNote={handleUpdateNote} />;
   } else if (view === "settings") {
-    main = <SettingsView papers={papers} />;
+    main = (
+      <SettingsView
+        papers={papers}
+        importing={importing}
+        onExport={handleExport}
+        onImportBackup={handleImportBackup}
+      />
+    );
   } else {
     main = (
       <Library
@@ -342,9 +339,6 @@ export default function App() {
         indexProgress={indexProgress}
         onImport={handleImport}
         onImportUrl={handleImportUrl}
-        onImportResearch={handleResearchImport}
-        onExport={handleExport}
-        onImportBackup={handleImportBackup}
         onIndexAll={handleIndexAll}
         onDismissNote={() => setImportNote(null)}
         onOpen={openPaper}

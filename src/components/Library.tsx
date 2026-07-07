@@ -164,9 +164,6 @@ interface Props {
   indexProgress: { done: number; total: number } | null;
   onImport: () => void;
   onImportUrl: (url: string) => void;
-  onImportResearch: () => void;
-  onExport: () => void;
-  onImportBackup: () => void;
   onIndexAll: () => void;
   onDismissNote: () => void;
   onOpen: (id: string) => void;
@@ -184,9 +181,6 @@ export default function Library({
   indexProgress,
   onImport,
   onImportUrl,
-  onImportResearch,
-  onExport,
-  onImportBackup,
   onIndexAll,
   onDismissNote,
   onOpen,
@@ -254,29 +248,6 @@ export default function Library({
               : `✦ Index all${unindexed > 0 ? ` (${unindexed})` : ""}`}
           </button>
           <span className="bar-divider" />
-          <button
-            className="ghost-btn"
-            title="Import from the Research (un.ms) app"
-            onClick={onImportResearch}
-            disabled={importing}
-          >
-            ⇪ Research
-          </button>
-          <button
-            className="ghost-btn"
-            title="Export a backup (papers, lists, annotations, summaries, conversations)"
-            onClick={onExport}
-          >
-            ⭳ Export
-          </button>
-          <button
-            className="ghost-btn"
-            title="Restore from a backup file — redownloads papers and recovers everything"
-            onClick={onImportBackup}
-            disabled={importing}
-          >
-            ⭱ Restore
-          </button>
           <button
             className="ghost-btn"
             title="Search arXiv"

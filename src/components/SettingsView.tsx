@@ -10,7 +10,14 @@ import {
   DEFAULT_REFS_PROMPT,
 } from "../lib/settings";
 
-export default function SettingsView({ papers }: { papers: Paper[] }) {
+interface Props {
+  papers: Paper[];
+  importing: boolean;
+  onExport: () => void;
+  onImportBackup: () => void;
+}
+
+export default function SettingsView({ papers, importing, onExport, onImportBackup }: Props) {
   const [s, setS] = useState<Settings>(getSettings());
   const update = (patch: Partial<Settings>) => {
     const next = { ...s, ...patch };
@@ -144,6 +151,20 @@ export default function SettingsView({ papers }: { papers: Paper[] }) {
           </div>
         </div>
         <p className="set-hint">Stored locally at ~/Library/Application Support/com.local.reader/</p>
+
+        <div className="set-row">
+          <label>Backup</label>
+          <div className="provider">
+            <button onClick={onExport}>⭳ Export</button>
+            <button onClick={onImportBackup} disabled={importing}>
+              ⭱ Restore
+            </button>
+          </div>
+        </div>
+        <p className="set-hint">
+          Export saves papers, lists, annotations, summaries, and conversations to a file. Restore redownloads papers
+          and recovers everything from a backup.
+        </p>
       </section>
 
       <section className="set-group">

@@ -1194,6 +1194,14 @@ button {
   padding: 9px 14px;
   margin-bottom: 18px;
   font-size: 14px;
+  /* Fade in, hold, then fade out — timed to the 4s auto-dismiss in App. */
+  animation: import-note-life 4s ease forwards;
+}
+@keyframes import-note-life {
+  0% { opacity: 0; }
+  6% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
 }
 .import-note button {
   background: none;
