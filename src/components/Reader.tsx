@@ -21,7 +21,7 @@ import AnnotationsPanel from "./AnnotationsPanel";
 import TocPanel from "./TocPanel";
 import ReadingListMenu from "./ReadingListMenu";
 
-const HL_COLOR = "#f2c94c";
+const HL_COLOR = "#eccb60"; // Flexoki yellow-200
 const NO_HIGHLIGHTS: Highlight[] = [];
 
 interface Props {
@@ -120,6 +120,39 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   const [listMenuOpen, setListMenuOpen] = useState(false);
   const listWrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Reading progress: track the scroll fraction in refs (no re-render per scroll
+  // tick), persist it every few seconds and on exit, restore it on open.
+  const progressRef = useRef(paper.readingProgress ?? 0);
+  const initialProgress = useRef(paper.readingProgress ?? 0);
+  const paperRef = useRef(paper);
+  useEffect(() => {
+    paperRef.current = paper;
+  }, [paper]);
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    if (max > 0) progressRef.current = el.scrollTop / max;
+  }, []);
+
+  useEffect(() => {
+    const save = () => {
+      const p = paperRef.current;
+      const frac = progressRef.current;
+      if (Math.abs((p.readingProgress ?? 0) - frac) > 0.005) {
+        onChange({ ...p, readingProgress: frac });
+      }
+    };
+    const t = setInterval(save, 5000);
+    window.addEventListener("pagehide", save); // app quit / window close
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("pagehide", save);
+      save();
+    };
+  }, [onChange]);
 
   const inAnyList = lists.some((l) => l.paperIds.includes(paper.id));
 
@@ -233,6 +266,40 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
       cancelled = true;
     };
   }, [paper.id]);
+
+  // Resume where reading left off. Placeholder heights settle over the first
+  // frames (real page sizes arrive async), so keep re-asserting the target
+  // position until the scroll height holds still — and hand control back the
+  // moment the user scrolls themselves.
+  useEffect(() => {
+    if (!doc) return;
+    const frac = initialProgress.current;
+    const el = containerRef.current;
+    if (!frac || !el) return;
+    let raf = 0;
+    let lastHeight = -1;
+    let stable = 0;
+    const stop = () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener("wheel", stop);
+      el.removeEventListener("touchstart", stop);
+    };
+    const apply = () => {
+      el.scrollTop = frac * (el.scrollHeight - el.clientHeight);
+      if (el.scrollHeight === lastHeight) {
+        stable++;
+      } else {
+        stable = 0;
+        lastHeight = el.scrollHeight;
+      }
+      if (stable < 5) raf = requestAnimationFrame(apply);
+      else stop();
+    };
+    el.addEventListener("wheel", stop, { passive: true });
+    el.addEventListener("touchstart", stop, { passive: true });
+    raf = requestAnimationFrame(apply);
+    return stop;
+  }, [doc]);
 
   // Indexing (analysis + references) runs in the background from App, so it keeps
   // going and persists even if this reader is closed. `indexing` reflects its status.
@@ -403,7 +470,12 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
 
       <div className="reader-body">
         <RelatedCard paper={paper} papers={papers} onOpen={onOpenPaper} />
-        <div className={"pdf-scroll" + (tint.filter ? " dark" : "")} ref={containerRef} onMouseUp={handleMouseUp}>
+        <div
+          className={"pdf-scroll" + (tint.filter ? " dark" : "")}
+          ref={containerRef}
+          onMouseUp={handleMouseUp}
+          onScroll={handleScroll}
+        >
           {doc ? (
             Array.from({ length: numPages }, (_, i) => (
               <PdfPage

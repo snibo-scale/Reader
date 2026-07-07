@@ -5,6 +5,8 @@
   --base-100: #e6e4d9;
   --base-150: #dad8ce;
   --base-300: #b7b5ac;
+  --base-400: #878580;
+  --base-600: #575653;
   --panel: #fffcf0;
   --ink: #100f0f; /* base-950 */
   --muted: #6f6e69; /* base-500 */
@@ -49,7 +51,8 @@ button {
 .sidebar {
   width: 230px;
   flex-shrink: 0;
-  padding: 22px 16px;
+  /* Extra top padding clears the macOS traffic lights (hidden title bar). */
+  padding: 42px 16px 22px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -57,7 +60,7 @@ button {
 }
 .sidebar.collapsed {
   width: 46px;
-  padding: 16px 8px;
+  padding: 42px 8px 16px;
   align-items: center;
   justify-content: flex-start;
 }
@@ -369,7 +372,7 @@ button {
 }
 .ref-add {
   flex-shrink: 0;
-  background: #fff;
+  background: var(--paper);
   border: 1px solid var(--accent);
   color: var(--accent);
   border-radius: 16px;
@@ -379,7 +382,7 @@ button {
 }
 .ref-add:hover:not(:disabled) {
   background: var(--accent);
-  color: #fff;
+  color: var(--paper);
 }
 .ref-add:disabled {
   opacity: 0.5;
@@ -460,7 +463,7 @@ button {
 .annot-text {
   font-size: 14px;
   line-height: 1.55;
-  background: #ffe16b;
+  background: #f1d67e;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   padding: 1px 3px;
@@ -602,7 +605,7 @@ button {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: #9c968c;
+  background: var(--base-400);
   display: inline-block;
 }
 
@@ -627,6 +630,8 @@ button {
 .library {
   flex: 1;
   overflow-y: auto;
+  /* Never scroll the page sideways — only .continue-row scrolls horizontally. */
+  overflow-x: hidden;
   padding: 22px 30px 60px;
 }
 
@@ -661,7 +666,7 @@ button {
 }
 
 .add-btn {
-  background: #fff;
+  background: var(--paper);
   border: 1px solid var(--accent);
   color: var(--accent);
   padding: 8px 16px;
@@ -671,7 +676,7 @@ button {
 }
 .add-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--paper);
 }
 .add-btn:disabled {
   opacity: 0.6;
@@ -725,7 +730,7 @@ button {
 }
 .read-badge {
   background: var(--accent);
-  color: #fff;
+  color: var(--paper);
 }
 .card.read {
   opacity: 0.62;
@@ -753,7 +758,7 @@ button {
 }
 .hl-count {
   font-size: 14px;
-  color: #4a463f;
+  color: var(--base-600);
 }
 .card-actions {
   display: flex;
@@ -764,7 +769,7 @@ button {
 .card-del {
   background: none;
   border: none;
-  color: #4a463f;
+  color: var(--base-600);
   opacity: 0;
   font-size: 13px;
   cursor: pointer;
@@ -806,25 +811,34 @@ button {
   padding: 0 10px;
   font-size: 15px;
 }
-.card-list-btn {
+.card-list-btn,
+.card-pin-btn {
   background: none;
   border: none;
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
-  color: #4a463f;
+  color: var(--base-600);
   opacity: 0;
   transition: opacity 0.12s ease, color 0.12s ease;
 }
-.card:hover .card-list-btn {
+/* Pin sits at the right edge, next to the list button. */
+.card-pin-btn {
+  margin-left: auto;
+  display: flex;
+}
+.card:hover .card-list-btn,
+.card:hover .card-pin-btn {
   opacity: 0.55;
 }
-.card-list-btn:hover {
+.card-list-btn:hover,
+.card-pin-btn:hover {
   opacity: 1;
 }
-.card-list-btn.on {
+.card-list-btn.on,
+.card-pin-btn.on {
   opacity: 1;
-  color: #d9a407;
+  color: #d0a215;
 }
 /* Keep the trigger visible while its menu is open, even if the cursor leaves the card. */
 .card-list-btn.open {
@@ -837,7 +851,7 @@ button {
   right: 0;
   z-index: 41;
   width: 210px;
-  background: var(--paper, #fff);
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
@@ -880,7 +894,7 @@ button {
 }
 .list-menu-check {
   width: 14px;
-  color: #d9a407;
+  color: #d0a215;
 }
 .list-menu-name {
   overflow: hidden;
@@ -945,8 +959,8 @@ button {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
 }
 .reading-row.drag-over {
-  border-color: #d9a407;
-  box-shadow: 0 0 0 2px rgba(217, 164, 7, 0.25);
+  border-color: #d0a215;
+  box-shadow: 0 0 0 2px rgba(208, 162, 21, 0.25);
 }
 .reading-handle {
   color: var(--muted);
@@ -993,7 +1007,7 @@ button {
 .reading-win {
   background: none;
   border: none;
-  color: #4a463f;
+  color: var(--base-600);
   opacity: 0.45;
   font-size: 14px;
   cursor: pointer;
@@ -1004,7 +1018,7 @@ button {
 .reading-remove {
   background: none;
   border: none;
-  color: #4a463f;
+  color: var(--base-600);
   opacity: 0.45;
   font-size: 14px;
   cursor: pointer;
@@ -1050,7 +1064,7 @@ button {
   margin-top: 3px;
 }
 .arxiv-summary {
-  color: #4a463f;
+  color: var(--base-600);
   font-size: 13px;
   line-height: 1.4;
   margin-top: 6px;
@@ -1176,7 +1190,7 @@ button {
   font-size: 13px;
 }
 .ghost-btn:hover {
-  background: #fff;
+  background: var(--paper);
 }
 .ghost-btn:disabled {
   opacity: 0.5;
@@ -1188,8 +1202,8 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  background: #e0eede;
-  border: 1px solid #b9d4b3;
+  background: color-mix(in srgb, var(--accent-400) 18%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--accent-400) 45%, var(--paper));
   border-radius: 10px;
   padding: 9px 14px;
   margin-bottom: 18px;
@@ -1289,7 +1303,7 @@ button {
 .rec-summary {
   font-size: 13px;
   line-height: 1.5;
-  color: #504c45;
+  color: var(--base-600);
   user-select: text;
 }
 .rec-actions {
@@ -1400,7 +1414,7 @@ button {
   font-weight: 600;
 }
 .result-star {
-  color: #d9a407;
+  color: #d0a215;
   margin-right: 6px;
 }
 .result-meta {
@@ -1643,7 +1657,7 @@ button {
   gap: 6px;
 }
 .reader-tools button {
-  background: #fff;
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 8px;
   min-width: 32px;
@@ -1662,7 +1676,7 @@ button {
 }
 .toggle.current {
   background: var(--accent);
-  color: #fff;
+  color: var(--paper);
   border-color: var(--accent);
 }
 
@@ -1753,8 +1767,8 @@ button {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
-  border: 1px solid #777;
+  background: var(--paper);
+  border: 1px solid var(--base-300);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
@@ -1790,7 +1804,7 @@ button {
 
 .pdf-page {
   position: relative;
-  background: #fff;
+  background: var(--paper);
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.1);
 }
 .pdf-page canvas {
@@ -1806,7 +1820,7 @@ button {
 }
 
 .pdf-scroll.dark {
-  background: #1b1a18;
+  background: #1c1b1a;
 }
 .pdf-scroll.dark .pdf-page {
   box-shadow: 0 4px 22px rgba(0, 0, 0, 0.5);
@@ -1901,7 +1915,7 @@ button {
   padding: 8px 10px;
   font: inherit;
   font-size: 14px;
-  background: #fff;
+  background: var(--paper);
   resize: vertical;
   user-select: text;
 }
@@ -1923,7 +1937,7 @@ button {
 }
 .note-done {
   background: var(--accent);
-  color: #fff;
+  color: var(--paper);
   border: none;
   border-radius: 8px;
   padding: 5px 14px;
@@ -1937,7 +1951,7 @@ button {
   z-index: 50;
   display: flex;
   gap: 2px;
-  background: #2b2926;
+  background: #282726;
   border-radius: 9px;
   padding: 4px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
@@ -1945,7 +1959,7 @@ button {
 .sel-toolbar button {
   background: none;
   border: none;
-  color: #fff;
+  color: var(--paper);
   font-size: 13px;
   padding: 5px 10px;
   border-radius: 6px;
@@ -1981,7 +1995,7 @@ button {
   gap: 4px;
 }
 .provider button {
-  background: #fff;
+  background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 4px 10px;
@@ -1990,7 +2004,7 @@ button {
 }
 .provider button.current {
   background: var(--ink);
-  color: #fff;
+  color: var(--paper);
   border-color: var(--ink);
 }
 
@@ -2201,7 +2215,7 @@ button {
   padding: 11px 12px;
   font: inherit;
   font-size: 14px;
-  background: #fff;
+  background: var(--paper);
   user-select: text;
 }
 .chat-input textarea:focus {
@@ -2210,7 +2224,7 @@ button {
 }
 .chat-input button {
   background: var(--accent);
-  color: #fff;
+  color: var(--paper);
   border: none;
   border-radius: 10px;
   padding: 0 16px;
@@ -2240,4 +2254,119 @@ button {
 }
 .tl-year {
   contain-intrinsic-size: auto 160px;
+}
+
+/* ---------------- Continue reading strip ---------------- */
+.continue-row {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+.continue-card {
+  flex: 0 0 210px;
+  min-width: 0;
+  position: relative;
+  text-align: left;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: transform 0.08s ease, box-shadow 0.12s ease;
+}
+.continue-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+.continue-title {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.continue-author {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.continue-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.continue-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+.continue-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.continue-pct {
+  font-size: 11px;
+  color: var(--muted);
+}
+.continue-pin {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  display: flex;
+  color: var(--base-600);
+  padding: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.continue-pin.on {
+  color: #d0a215;
+}
+.continue-card:hover .continue-pin {
+  opacity: 0.55;
+}
+.continue-pin:hover,
+.continue-pin.on {
+  opacity: 1;
+}
+.continue-divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 18px 0 22px;
+}
+
+/* ---------------- Scrollbars (WebKit-only app) ---------------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 8px; /* horizontal, e.g. the continue-reading strip */
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--base-150);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--base-300);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

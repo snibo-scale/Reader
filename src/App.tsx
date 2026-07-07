@@ -349,6 +349,7 @@ export default function App() {
         onDismissNote={() => setImportNote(null)}
         onOpen={openPaper}
         onDelete={handleDelete}
+        onUpdate={handleUpdate}
         onImported={handleImported}
         lists={lists}
         onChangeLists={commitLists}

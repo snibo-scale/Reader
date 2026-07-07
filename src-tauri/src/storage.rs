@@ -99,6 +99,12 @@ pub struct Paper {
     /// ISO timestamp when marked read/done; None = unread.
     #[serde(default)]
     pub read_at: Option<String>,
+    /// Scroll position in the reader as a 0..1 fraction; used to resume reading.
+    #[serde(default)]
+    pub reading_progress: Option<f64>,
+    /// ISO timestamp when pinned; pinned papers sort to the top of the library.
+    #[serde(default)]
+    pub pinned_at: Option<String>,
     /// Legacy single-list position (v2.0-dev). Migrated into a named reading list
     /// on load, then cleared and never written again (skipped when None).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -341,6 +347,8 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
         added_at: now_iso(),
         last_opened_at: None,
         read_at: None,
+        reading_progress: None,
+        pinned_at: None,
         reading_order: None,
         source_key: None,
         content_hash: Some(hash),
@@ -512,6 +520,8 @@ WHERE i.deleted_at IS NULL;";
             added_at: now_iso(),
             last_opened_at: None,
         read_at: None,
+        reading_progress: None,
+        pinned_at: None,
             reading_order: None,
             source_key: if key.is_empty() { None } else { Some(key.clone()) },
             content_hash: Some(hash.clone()),
@@ -615,6 +625,8 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         added_at: now_iso(),
         last_opened_at: None,
         read_at: None,
+        reading_progress: None,
+        pinned_at: None,
         reading_order: None,
         source_key,
         content_hash: Some(hash),
@@ -846,6 +858,8 @@ mod tests {
             added_at: "2024-01-01T00:00:00.000Z".into(),
             last_opened_at: None,
             read_at: None,
+            reading_progress: None,
+            pinned_at: None,
             reading_order: None,
             source_key: Some("2401.00001".into()),
             content_hash: Some("abc".into()),

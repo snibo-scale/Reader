@@ -12,7 +12,7 @@ const HUE_STOPS = [0, 60, 120, 180, 240, 300, 360];
 export default function TintPicker({ mode, color, onChange }: Props) {
   const [open, setOpen] = useState(false);
 
-  const swatch = mode === "dark" ? "#2b2926" : mode === "white" ? "#ffffff" : hslString(color);
+  const swatch = mode === "dark" ? "#282726" : mode === "white" ? "#ffffff" : hslString(color);
   const setColor = (patch: Partial<TintColor>) => onChange("color", { ...color, ...patch });
 
   const hueGradient = `linear-gradient(to right, ${HUE_STOPS.map(
@@ -48,7 +48,7 @@ export default function TintPicker({ mode, color, onChange }: Props) {
               />
               <button
                 className={"swatch" + (mode === "dark" ? " current" : "")}
-                style={{ background: "#2b2926" }}
+                style={{ background: "#282726" }}
                 title="Dark"
                 onClick={() => onChange("dark", color)}
               />

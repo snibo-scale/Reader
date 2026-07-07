@@ -7,15 +7,35 @@ import { openPaperWindow } from "../lib/window";
 import ArxivSearch from "./ArxivSearch";
 import ReadingListMenu from "./ReadingListMenu";
 
+/** Minimal monochrome pushpin, tinted via currentColor. */
+function PinIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+    </svg>
+  );
+}
+
 interface CardProps {
   paper: Paper;
   lists: ReadingList[];
   onChangeLists: (next: ReadingList[]) => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  onUpdate: (p: Paper) => void;
 }
 
-function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete }: CardProps) {
+function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete, onUpdate }: CardProps) {
   const topic = paper.index?.topics[0];
   const background = topic ? tagTint(topic) : "var(--paper)";
   const [menuOpen, setMenuOpen] = useState(false);
@@ -50,6 +70,16 @@ function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete }: CardProps)
       <div className="card-top">
         <span className="badge">{paper.year || "—"}</span>
         {paper.readAt && <span className="badge read-badge" title="Read">✓ Read</span>}
+        <button
+          className={"card-pin-btn" + (paper.pinnedAt ? " on" : "")}
+          title={paper.pinnedAt ? "Unpin" : "Pin to the top strip"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onUpdate({ ...paper, pinnedAt: paper.pinnedAt ? null : new Date().toISOString() });
+          }}
+        >
+          <PinIcon />
+        </button>
         <div className="card-list-wrap" ref={wrapRef}>
           <button
             className={"card-list-btn" + (inAnyList ? " on" : "") + (menuOpen ? " open" : "")}
@@ -116,6 +146,7 @@ interface Props {
   onDismissNote: () => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  onUpdate: (p: Paper) => void;
   onImported: (p: Paper) => void;
   lists: ReadingList[];
   onChangeLists: (next: ReadingList[]) => void;
@@ -133,6 +164,7 @@ export default function Library({
   onDismissNote,
   onOpen,
   onDelete,
+  onUpdate,
   onImported,
   lists,
   onChangeLists,
@@ -162,14 +194,29 @@ export default function Library({
     return opened > added ? opened : added;
   };
   const sorted = useMemo(() => [...papers].sort((a, b) => recency(b).localeCompare(recency(a))), [papers]);
+  // "Continue reading" strip: pinned papers first (newest pin first), then the
+  // most recently opened unfinished papers to fill it up to 5.
+  const continueReading = useMemo(() => {
+    if (mode !== "recent") return [];
+    const pinned = papers
+      .filter((p) => p.pinnedAt)
+      .sort((a, b) => (b.pinnedAt ?? "").localeCompare(a.pinnedAt ?? ""));
+    const pinnedIds = new Set(pinned.map((p) => p.id));
+    const recent = papers
+      .filter((p) => p.lastOpenedAt && !p.readAt && !pinnedIds.has(p.id))
+      .sort((a, b) => (b.lastOpenedAt ?? "").localeCompare(a.lastOpenedAt ?? ""));
+    return [...pinned, ...recent.slice(0, Math.max(0, 5 - pinned.length))];
+  }, [mode, papers]);
   const shown = useMemo(
     () => {
       if (mode !== "recent") return sorted;
-      // Recent = anything opened or added within the past week (recency order preserved).
+      // Recent = anything opened or added within the past week (recency order
+      // preserved), minus what the continue-reading strip already shows.
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      return sorted.filter((p) => recency(p) >= weekAgo);
+      const inStrip = new Set(continueReading.map((p) => p.id));
+      return sorted.filter((p) => recency(p) >= weekAgo && !inStrip.has(p.id));
     },
-    [mode, sorted]
+    [mode, sorted, continueReading]
   );
   const hasGrid = shown.length > 0;
 
@@ -196,7 +243,7 @@ export default function Library({
       <header className="lib-header">
         <div className="crumbs">
           <strong>My Library</strong> <span className="sep">/</span>{" "}
-          {mode === "all" ? "All Papers" : "Recent"}
+          {mode === "all" ? "All Papers" : "Home"}
         </div>
         <div className="lib-actions">
           <button className="ghost-btn" onClick={onIndexAll} disabled={indexing || unindexed === 0}>
@@ -263,6 +310,45 @@ export default function Library({
         </div>
       )}
 
+      {continueReading.length > 0 && (
+        <>
+          <div className="continue-row">
+            {continueReading.map((p) => {
+              const topic = p.index?.topics[0];
+              const pct = Math.round((p.readingProgress ?? 0) * 100);
+              return (
+                <div
+                  key={p.id}
+                  className="continue-card"
+                  style={{ background: topic ? tagTint(topic) : "var(--paper)" }}
+                  onClick={() => onOpen(p.id)}
+                >
+                  <button
+                    className={"continue-pin" + (p.pinnedAt ? " on" : "")}
+                    title={p.pinnedAt ? "Unpin" : "Pin here"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdate({ ...p, pinnedAt: p.pinnedAt ? null : new Date().toISOString() });
+                    }}
+                  >
+                    <PinIcon size={12} />
+                  </button>
+                  <div className="continue-title">{p.title}</div>
+                  <div className="continue-author">{formatAuthors(p.authors)}</div>
+                  <div className="continue-foot">
+                    <span className="continue-bar">
+                      <span style={{ width: `${pct}%` }} />
+                    </span>
+                    <span className="continue-pct">{pct}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <hr className="continue-divider" />
+        </>
+      )}
+
       {papers.length === 0 ? (
         <div className="empty">
           <p>Your library is empty.</p>
@@ -271,9 +357,11 @@ export default function Library({
           </button>
         </div>
       ) : shown.length === 0 ? (
-        <div className="empty">
-          <p>Nothing opened or added in the past week — see All Papers.</p>
-        </div>
+        continueReading.length === 0 && (
+          <div className="empty">
+            <p>Nothing opened or added in the past week — see All Papers.</p>
+          </div>
+        )
       ) : (
         <div className="grid" ref={gridRef}>
           {columns.map((col, ci) => (
@@ -286,6 +374,7 @@ export default function Library({
                   onChangeLists={onChangeLists}
                   onOpen={onOpen}
                   onDelete={onDelete}
+                  onUpdate={onUpdate}
                 />
               ))}
             </div>

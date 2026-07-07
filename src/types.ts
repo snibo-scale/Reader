@@ -59,6 +59,10 @@ export interface Paper {
   lastOpenedAt?: string | null;
   /** ISO timestamp when marked read/done; null/absent = unread. */
   readAt?: string | null;
+  /** Scroll position in the reader as a 0..1 fraction; used to resume reading. */
+  readingProgress?: number | null;
+  /** ISO timestamp when pinned; pinned papers sort to the top of the library. */
+  pinnedAt?: string | null;
   sourceKey?: string | null;
   /** SHA-256 of the PDF bytes; used to detect duplicate imports. */
   contentHash?: string | null;

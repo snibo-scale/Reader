@@ -15,7 +15,7 @@ export default function Sidebar({ view, inReader, collapsed, onToggle, onNavigat
 
   if (collapsed) {
     return (
-      <aside className="sidebar collapsed">
+      <aside className="sidebar collapsed" data-tauri-drag-region>
         <Logo size={24} />
         <button className="nav-toggle" onClick={onToggle} title="Show sidebar">
           »
@@ -33,7 +33,7 @@ export default function Sidebar({ view, inReader, collapsed, onToggle, onNavigat
   return (
     <aside className="sidebar">
       <div className="sidebar-top">
-        <div className="sidebar-header">
+        <div className="sidebar-header" data-tauri-drag-region>
           <div className="sidebar-brand">
             <Logo size={24} />
             <span className="brand-name">Reader</span>
@@ -43,7 +43,7 @@ export default function Sidebar({ view, inReader, collapsed, onToggle, onNavigat
           </button>
         </div>
         <nav className="nav-top">
-          {item("library", "Recent", inLibrary)}
+          {item("library", "Home", inLibrary)}
           {item("all", "All Papers", !inReader && view === "all")}
           {item("reading", "★ Reading Lists", !inReader && view === "reading")}
           {item("search", "Search", !inReader && view === "search")}

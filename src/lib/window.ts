@@ -13,6 +13,9 @@ export async function openPaperWindow(id: string, title: string): Promise<void> 
     title: title || "Reader",
     width: 1000,
     height: 760,
+    // Match the main window's hidden title bar (macOS-only; ignored elsewhere).
+    titleBarStyle: "overlay",
+    hiddenTitle: true,
   });
   win.once("tauri://error", (e) => console.error("Failed to open paper window:", e));
 }
