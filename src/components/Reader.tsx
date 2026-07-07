@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Highlight, Paper, ReadingList, Rect } from "../types";
 import { analyzePaper, extractReferences, readPdfBytes } from "../lib/api";
-import { extractTailText, extractText, loadPdf } from "../lib/pdf";
+import { extractHeadings, extractTailText, extractText, loadPdf, type Heading } from "../lib/pdf";
 import { removeHighlight as withoutHighlight, setHighlightNote, uid } from "../lib/util";
 import { DEFAULT_TINT_COLOR, resolveTint, type TintColor, type TintMode } from "../lib/tints";
 import TintPicker from "./TintPicker";
@@ -17,6 +17,7 @@ import SummaryPanel from "./SummaryPanel";
 import Presentation, { paperSlides } from "./Presentation";
 import NoteEditor from "./NoteEditor";
 import AnnotationsPanel from "./AnnotationsPanel";
+import TocPanel from "./TocPanel";
 
 const HL_COLOR = "#f2c94c";
 const NO_HIGHLIGHTS: Highlight[] = [];
@@ -97,7 +98,8 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   const [scale, setScale] = useState(1.4);
   const [paperText, setPaperText] = useState("");
   const [selection, setSelection] = useState<SelectionState | null>(null);
-  const [rightPanel, setRightPanel] = useState<"none" | "chat" | "refs" | "notes" | "summary">("none");
+  const [rightPanel, setRightPanel] = useState<"none" | "chat" | "refs" | "notes" | "summary" | "toc">("none");
+  const [headings, setHeadings] = useState<Heading[] | null>(null);
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [askContext, setAskContext] = useState("");
   const [tintMode, setTintMode] = useState<TintMode>(
@@ -193,7 +195,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     }
   }, [doc, paper, onChange]);
 
-  const togglePanel = useCallback((p: "chat" | "refs" | "notes" | "summary") => {
+  const togglePanel = useCallback((p: "chat" | "refs" | "notes" | "summary" | "toc") => {
     setRightPanel((cur) => (cur === p ? "none" : p));
   }, []);
 
@@ -216,6 +218,15 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     containerRef.current
       ?.querySelector(`.pdf-page[data-page="${page}"]`)
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+  // Scroll to a point within a page (yFrac 0..1 from its top) — for TOC jumps.
+  const jumpTo = useCallback((page: number, yFrac: number) => {
+    const scroll = containerRef.current;
+    const el = scroll?.querySelector<HTMLElement>(`.pdf-page[data-page="${page}"]`);
+    if (!scroll || !el) return;
+    const top =
+      el.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop + yFrac * el.offsetHeight - 12;
+    scroll.scrollTo({ top, behavior: "smooth" });
   }, []);
 
   const tint = useMemo(() => resolveTint(tintMode, tintColor), [tintMode, tintColor]);
@@ -244,6 +255,9 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
       });
       extractText(d).then((t) => {
         if (!cancelled) setPaperText(t);
+      });
+      extractHeadings(d).then((h) => {
+        if (!cancelled) setHeadings(h);
       });
     })();
     return () => {
@@ -405,6 +419,13 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
           </button>
           <span className="bar-divider" />
           <button
+            className={"toggle" + (rightPanel === "toc" ? " current" : "")}
+            onClick={() => togglePanel("toc")}
+            title="Contents"
+          >
+            ☰
+          </button>
+          <button
             className={"toggle" + (rightPanel === "notes" ? " current" : "")}
             onClick={() => togglePanel("notes")}
             title="Notes &amp; annotations"
@@ -476,6 +497,10 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
             onRegenerate={regenerateSummary}
             onClose={() => setRightPanel("none")}
           />
+        )}
+
+        {rightPanel === "toc" && (
+          <TocPanel headings={headings} onJump={jumpTo} onClose={() => setRightPanel("none")} />
         )}
 
         {rightPanel === "notes" && (
