@@ -13,8 +13,51 @@ export async function loadPdf(bytes: Uint8Array): Promise<PDFDocumentProxy> {
   return pdfjsLib.getDocument({ data }).promise;
 }
 
-/** Text from the last pages of a PDF — where the references/bibliography live. */
+const REFS_HEADING = /^(\d+(\.\d+)*\.?\s*|[IVXLC]+\.\s*)?(references|bibliography|works\s+cited)\b/i;
+
+// Text spanning [start, end) by vertical position: from the `start` heading to
+// the `end` heading (or the document end when `end` is undefined). Boundary
+// pages are clipped by baseline position so we grab exactly that section.
+async function textBetween(
+  doc: PDFDocumentProxy,
+  start: Heading,
+  end: Heading | undefined,
+  maxChars: number
+): Promise<string> {
+  const Util = (pdfjsLib as unknown as { Util: { transform: (a: number[], b: number[]) => number[] } }).Util;
+  const endPage = end ? end.page : doc.numPages;
+  let out = "";
+  for (let i = start.page; i <= endPage; i++) {
+    const page = await doc.getPage(i);
+    const vp = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    for (const it of content.items) {
+      if (!("str" in it)) continue;
+      const tx = Util.transform(vp.transform as unknown as number[], it.transform as number[]);
+      const yb = tx[5] / vp.height; // baseline, top-origin fraction
+      if (i === start.page && yb < start.yFrac) continue; // above the References heading
+      if (end && i === end.page && yb >= end.yFrac) continue; // at/after the next section
+      out += it.str + " ";
+    }
+    out += "\n";
+    if (out.length > maxChars) break;
+  }
+  return out.slice(0, maxChars);
+}
+
+/**
+ * Text of the references section: from the References/Bibliography/Works Cited
+ * heading to the next section (or the document end). Falls back to the last
+ * `tailPages` pages when no such heading is detected.
+ */
 export async function extractTailText(doc: PDFDocumentProxy, tailPages = 16, maxChars = 60000): Promise<string> {
+  const heads = await extractHeadings(doc);
+  const refIdx = heads.findIndex((h) => REFS_HEADING.test(h.text.trim()));
+  if (refIdx >= 0) {
+    const between = await textBetween(doc, heads[refIdx], heads[refIdx + 1], maxChars);
+    if (between.trim()) return between;
+  }
+  // Fallback: no heading detected — scan the tail pages.
   const start = Math.max(1, doc.numPages - tailPages + 1);
   let out = "";
   for (let i = start; i <= doc.numPages; i++) {
