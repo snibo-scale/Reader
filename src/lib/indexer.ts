@@ -1,6 +1,6 @@
 import type { Analysis } from "./metadata";
 import type { Paper, Provider } from "../types";
-import { analyzePaper, extractReferences } from "./api";
+import { analyzePaper, extractReferences, readPaperText } from "./api";
 import { getPdfDoc, getPdfText } from "./pdfCache";
 import { extractTailText } from "./pdf";
 import { parseAnalysis, parseReferences } from "./metadata";
@@ -40,6 +40,33 @@ export async function buildIndex(
   model: string | null = null
 ): Promise<Paper | null> {
   if (!needsIndexing(paper)) return null;
+
+  // Markdown docs (imported webpages) have no PDF: analyse the markdown text and
+  // mark references N/A ([]) so they're considered fully indexed.
+  if (paper.kind === "markdown") {
+    let next = paper;
+    let changed = false;
+    if (needsAnalysis(next)) {
+      try {
+        const text = await readPaperText(paper.id);
+        if (text.trim()) {
+          const a = parseAnalysis(await analyzePaper(text, provider, model));
+          if (a) {
+            next = applyAnalysis(next, a);
+            changed = true;
+          }
+        }
+      } catch {
+        /* retry next time */
+      }
+    }
+    if (needsReferences(next)) {
+      next = { ...next, references: [] };
+      changed = true;
+    }
+    return changed ? next : null;
+  }
+
   const doc = await getPdfDoc(paper.id);
   let next = paper;
   let changed = false;

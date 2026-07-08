@@ -57,10 +57,27 @@ export const importLibrary = (path: string) => invoke<ImportResult>("import_libr
 
 export const importFromUrl = (url: string) => invoke<Paper>("import_from_url", { url });
 
+/** Fetch a webpage's raw HTML (backend, to dodge webview CORS). */
+export const fetchUrl = (url: string) => invoke<string>("fetch_url", { url });
+
+/** Store converted markdown as a paper. */
+export const importMarkdown = (
+  title: string,
+  markdown: string,
+  url: string,
+  author?: string,
+  year?: string
+) => invoke<Paper>("import_markdown", { title, markdown, url, author, year });
+
 export async function readPdfBytes(id: string): Promise<Uint8Array> {
   // The Rust command returns raw bytes, surfaced to JS as an ArrayBuffer.
   const buf = await invoke<ArrayBuffer>("read_pdf_bytes", { id });
   return new Uint8Array(buf);
+}
+
+/** Read a markdown paper's source text (reuses read_pdf_bytes — it reads any file). */
+export async function readPaperText(id: string): Promise<string> {
+  return new TextDecoder().decode(await readPdfBytes(id));
 }
 
 export type AiEvent =

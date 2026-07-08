@@ -13,6 +13,9 @@ export interface Highlight {
   color: string;
   note?: string;
   createdAt: string;
+  /** Char-offset anchor into the rendered markdown text (markdown docs only). */
+  start?: number;
+  end?: number;
 }
 
 export interface ChatMessage {
@@ -55,6 +58,8 @@ export interface Paper {
   year?: string | null;
   color: string;
   fileName: string;
+  /** "markdown" for imported webpages; absent/"pdf" = a PDF paper. */
+  kind?: "pdf" | "markdown";
   addedAt: string;
   lastOpenedAt?: string | null;
   /** ISO timestamp when marked read/done; null/absent = unread. */

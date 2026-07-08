@@ -149,10 +149,16 @@ export default function App() {
   }, [ensureIndexed]);
 
   const handleImportUrl = useCallback(async (url: string) => {
-    if (!url.trim()) return;
+    const u = url.trim();
+    if (!u) return;
+    // arXiv ids/links and direct .pdf links go through the PDF path; everything
+    // else is treated as a webpage and converted to markdown.
+    const isPdf = /\.pdf(\?|#|$)/i.test(u) || /arxiv\.org/i.test(u) || /^\d{4}\.\d{4,5}(v\d+)?$/.test(u);
     setImporting(true);
     try {
-      const paper = await importFromUrl(url.trim());
+      const paper = isPdf
+        ? await importFromUrl(u)
+        : await (await import("./lib/webpage")).importWebpage(u);
       setPapers((prev) => [paper, ...prev]);
       setImportNote(`Added "${paper.title}"`);
       ensureIndexed(paper);

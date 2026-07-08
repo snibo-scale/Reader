@@ -27,6 +27,11 @@ pub struct Highlight {
     #[serde(default)]
     pub note: Option<String>,
     pub created_at: String,
+    /// Char-offset anchor into the rendered markdown text (markdown docs only).
+    #[serde(default)]
+    pub start: Option<u32>,
+    #[serde(default)]
+    pub end: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -108,6 +113,9 @@ pub struct Paper {
     /// Manual position in the Home "continue reading" strip; None = pin/recency order.
     #[serde(default)]
     pub home_order: Option<i64>,
+    /// "markdown" for imported webpages; None/absent = a PDF paper.
+    #[serde(default)]
+    pub kind: Option<String>,
     /// Legacy single-list position (v2.0-dev). Migrated into a named reading list
     /// on load, then cleared and never written again (skipped when None).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -353,6 +361,7 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
         reading_progress: None,
         pinned_at: None,
         home_order: None,
+        kind: None,
         reading_order: None,
         source_key: None,
         content_hash: Some(hash),
@@ -527,6 +536,7 @@ WHERE i.deleted_at IS NULL;";
         reading_progress: None,
         pinned_at: None,
             home_order: None,
+            kind: None,
             reading_order: None,
             source_key: if key.is_empty() { None } else { Some(key.clone()) },
             content_hash: Some(hash.clone()),
@@ -633,6 +643,88 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         reading_progress: None,
         pinned_at: None,
         home_order: None,
+        kind: None,
+        reading_order: None,
+        source_key,
+        content_hash: Some(hash),
+        index: None,
+        highlights: vec![],
+        notes: None,
+        chat: vec![],
+        sessions: vec![],
+        references: None,
+    };
+    lib.papers.push(paper.clone());
+    lib.save();
+    Ok(paper)
+}
+
+/// Fetch a webpage's raw HTML. The frontend runs Readability + Turndown on it to
+/// produce markdown (done in the webview, where a DOM parser is available), then
+/// calls `import_markdown`. Fetching here avoids the webview's CORS restrictions.
+#[tauri::command]
+pub async fn fetch_url(url: String) -> Result<String, String> {
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return Err("Enter a URL".into());
+    }
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 ReaderApp")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Fetch failed: HTTP {}", resp.status().as_u16()));
+    }
+    resp.text().await.map_err(|e| e.to_string())
+}
+
+/// Store already-converted markdown (from `fetch_url` + frontend Readability/Turndown)
+/// as a paper. Mirrors `import_from_url` but writes a `.md` file and marks `kind`.
+#[tauri::command]
+pub fn import_markdown(
+    state: State<'_, Mutex<Library>>,
+    title: String,
+    markdown: String,
+    url: String,
+    author: Option<String>,
+    year: Option<String>,
+) -> Result<Paper, String> {
+    let title = title.trim();
+    let title = if title.is_empty() { "Untitled page" } else { title };
+    let clean = |o: Option<String>| o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let authors = clean(author);
+    let year = clean(year);
+    let source_key = {
+        let u = url.trim();
+        if u.is_empty() { None } else { Some(u.to_string()) }
+    };
+    let bytes = markdown.as_bytes();
+    let hash = sha256_hex(bytes);
+    let mut lib = state.lock().unwrap();
+    if let Some(dup) = lib.find_duplicate(&hash, source_key.as_deref()) {
+        return Err(format!("Already in your library: \"{}\"", dup.title));
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let file_name = format!("{id}.md");
+    std::fs::create_dir_all(lib.papers_dir()).map_err(|e| e.to_string())?;
+    std::fs::write(lib.papers_dir().join(&file_name), bytes).map_err(|e| e.to_string())?;
+    let color = COLORS[lib.papers.len() % COLORS.len()].to_string();
+
+    let paper = Paper {
+        id,
+        title: title.to_string(),
+        authors,
+        year,
+        color,
+        file_name,
+        added_at: now_iso(),
+        last_opened_at: None,
+        read_at: None,
+        reading_progress: None,
+        pinned_at: None,
+        home_order: None,
+        kind: Some("markdown".into()),
         reading_order: None,
         source_key,
         content_hash: Some(hash),
@@ -867,6 +959,7 @@ mod tests {
             reading_progress: None,
             pinned_at: None,
             home_order: None,
+            kind: None,
             reading_order: None,
             source_key: Some("2401.00001".into()),
             content_hash: Some("abc".into()),

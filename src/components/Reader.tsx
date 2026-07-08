@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Highlight, Paper, ReadingList, Rect } from "../types";
-import { analyzePaper, extractReferences } from "../lib/api";
+import { analyzePaper, extractReferences, readPaperText } from "../lib/api";
 import { extractTailText, type Heading } from "../lib/pdf";
 import { getPdfDoc, getPdfHeadings, getPdfText } from "../lib/pdfCache";
+import MarkdownDoc from "./MarkdownDoc";
 import { removeHighlight as withoutHighlight, setHighlightNote, uid } from "../lib/util";
 import { DEFAULT_TINT_COLOR, resolveTint, type TintColor, type TintMode } from "../lib/tints";
 import TintPicker from "./TintPicker";
@@ -40,6 +41,8 @@ interface PendingHighlight {
   page: number;
   text: string;
   rects: Rect[];
+  start?: number;
+  end?: number;
 }
 
 interface SelectionState {
@@ -94,7 +97,9 @@ function selectionTextFromGeometry(range: Range, layer: HTMLElement): string {
 }
 
 export default function Reader({ paper, papers, indexing, onBack, onChange, onOpenPaper, onImported, lists, onChangeLists }: Props) {
+  const isMd = paper.kind === "markdown";
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
+  const [mdText, setMdText] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [base, setBase] = useState({ w: 612, h: 792 });
   const [scale, setScale] = useState(1.4);
@@ -246,6 +251,13 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (isMd) {
+        const t = await readPaperText(paper.id);
+        if (cancelled) return;
+        setMdText(t);
+        setPaperText(t);
+        return;
+      }
       const d = await getPdfDoc(paper.id);
       if (cancelled) return;
       setDoc(d);
@@ -265,14 +277,14 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     return () => {
       cancelled = true;
     };
-  }, [paper.id]);
+  }, [paper.id, isMd]);
 
   // Resume where reading left off. Placeholder heights settle over the first
   // frames (real page sizes arrive async), so keep re-asserting the target
   // position until the scroll height holds still — and hand control back the
   // moment the user scrolls themselves.
   useEffect(() => {
-    if (!doc) return;
+    if (!doc && mdText === null) return;
     const frac = initialProgress.current;
     const el = containerRef.current;
     if (!frac || !el) return;
@@ -299,7 +311,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     el.addEventListener("touchstart", stop, { passive: true });
     raf = requestAnimationFrame(apply);
     return stop;
-  }, [doc]);
+  }, [doc, mdText]);
 
   // Indexing (analysis + references) runs in the background from App, so it keeps
   // going and persists even if this reader is closed. `indexing` reflects its status.
@@ -322,6 +334,19 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     let pending: PendingHighlight | null = null;
     let text = rawText;
     const anchorEl = anchor.nodeType === 1 ? (anchor as Element) : anchor.parentElement;
+    const mdRoot = anchorEl?.closest(".md-doc") as HTMLElement | null;
+    if (mdRoot) {
+      // Anchor by char offsets into the rendered markdown text. Count with
+      // Range.toString() so it matches MarkdownDoc's text-node walk on render.
+      const pre = range.cloneRange();
+      pre.selectNodeContents(mdRoot);
+      pre.setEnd(range.startContainer, range.startOffset);
+      const start = pre.toString().length;
+      const end = start + rawText.length;
+      if (end > start) pending = { page: 1, text: rawText, rects: [], start, end };
+      setSelection({ text, top: box.top - 46, left: box.left, pending });
+      return;
+    }
     const pageEl = anchorEl?.closest(".pdf-page") as HTMLElement | null;
     if (pageEl?.dataset.page) {
       const layer = pageEl.querySelector<HTMLElement>(".text-layer");
@@ -476,7 +501,19 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
           onMouseUp={handleMouseUp}
           onScroll={handleScroll}
         >
-          {doc ? (
+          {isMd ? (
+            mdText !== null ? (
+              <MarkdownDoc
+                text={mdText}
+                highlights={paper.highlights}
+                scale={scale}
+                tint={tint}
+                onOpenNote={handleSelectHighlight}
+              />
+            ) : (
+              <div className="loading">Loading…</div>
+            )
+          ) : doc ? (
             Array.from({ length: numPages }, (_, i) => (
               <PdfPage
                 key={i}
