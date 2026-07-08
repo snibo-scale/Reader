@@ -4,10 +4,12 @@ import type { Paper, ReadingList } from "./types";
 import {
   deletePaper,
   exportLibrary,
+  exportPaper,
   importFromResearch,
   importFromUrl,
   importLibrary,
   importPaper,
+  importPaperFile,
   listPapers,
   listReadingLists,
   saveReadingLists,
@@ -133,12 +135,14 @@ export default function App() {
   const handleImport = useCallback(async () => {
     const selected = await open({
       multiple: false,
-      filters: [{ name: "PDF", extensions: ["pdf"] }],
+      filters: [{ name: "PDF or shared paper", extensions: ["pdf", "reader"] }],
     });
     if (!selected || typeof selected !== "string") return;
     setImporting(true);
     try {
-      const paper = await importPaper(selected);
+      const paper = selected.toLowerCase().endsWith(".reader")
+        ? await importPaperFile(selected)
+        : await importPaper(selected);
       setPapers((prev) => [paper, ...prev]);
       ensureIndexed(paper);
     } catch (e) {
@@ -147,6 +151,21 @@ export default function App() {
       setImporting(false);
     }
   }, [ensureIndexed]);
+
+  const handleShare = useCallback(async (paper: Paper) => {
+    const safe = paper.title.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "paper";
+    const path = await save({
+      defaultPath: `${safe}.reader`,
+      filters: [{ name: "Shared paper", extensions: ["reader"] }],
+    });
+    if (!path) return;
+    try {
+      await exportPaper(paper.id, path);
+      setImportNote(`Shared "${paper.title}"`);
+    } catch (e) {
+      setImportNote(String(e));
+    }
+  }, []);
 
   const handleImportUrl = useCallback(async (url: string) => {
     const u = url.trim();
@@ -303,6 +322,7 @@ export default function App() {
         onChange={handleUpdate}
         onOpenPaper={openPaper}
         onImported={handleImported}
+        onShare={handleShare}
         lists={lists}
         onChangeLists={commitLists}
       />
@@ -355,6 +375,7 @@ export default function App() {
         onDismissNote={() => setImportNote(null)}
         onOpen={openPaper}
         onDelete={handleDelete}
+        onShare={handleShare}
         onUpdate={handleUpdate}
         onImported={handleImported}
         lists={lists}

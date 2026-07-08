@@ -33,6 +33,7 @@ interface Props {
   onChange: (p: Paper) => void;
   onOpenPaper: (id: string) => void;
   onImported: (p: Paper) => void;
+  onShare: (p: Paper) => void;
   lists: ReadingList[];
   onChangeLists: (next: ReadingList[]) => void;
 }
@@ -96,7 +97,7 @@ function selectionTextFromGeometry(range: Range, layer: HTMLElement): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export default function Reader({ paper, papers, indexing, onBack, onChange, onOpenPaper, onImported, lists, onChangeLists }: Props) {
+export default function Reader({ paper, papers, indexing, onBack, onChange, onOpenPaper, onImported, onShare, lists, onChangeLists }: Props) {
   const isMd = paper.kind === "markdown";
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [mdText, setMdText] = useState<string | null>(null);
@@ -124,6 +125,8 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
   const [activeNote, setActiveNote] = useState<{ id: string; top: number; left: number } | null>(null);
   const [listMenuOpen, setListMenuOpen] = useState(false);
   const listWrapRef = useRef<HTMLDivElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreWrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Reading progress: track the scroll fraction in refs (no re-render per scroll
@@ -161,17 +164,21 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
 
   const inAnyList = lists.some((l) => l.paperIds.includes(paper.id));
 
-  // Close the list menu on an outside click or Escape.
+  // Close the list / overflow menus on an outside click or Escape.
   useEffect(() => {
-    if (!listMenuOpen) return;
+    if (!listMenuOpen && !moreOpen) return;
     const onDown = (e: MouseEvent) => {
       if (listWrapRef.current && !listWrapRef.current.contains(e.target as Node)) {
         setListMenuOpen(false);
+      }
+      if (moreWrapRef.current && !moreWrapRef.current.contains(e.target as Node)) {
+        setMoreOpen(false);
       }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setListMenuOpen(false);
+        setMoreOpen(false);
       }
     };
     document.addEventListener("mousedown", onDown);
@@ -180,7 +187,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [listMenuOpen]);
+  }, [listMenuOpen, moreOpen]);
 
   const slides = useMemo(() => paperSlides(paper), [paper]);
   const setNote = useCallback(
@@ -406,7 +413,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
             My Library
           </button>
           <span className="sep">/</span>
-          <strong>{paper.title}</strong>
+          <strong title={paper.title}>{paper.title}</strong>
           {indexing && <span className="meta-busy">· indexing paper…</span>}
         </div>
         <div className="reader-tools">
@@ -439,21 +446,50 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
               />
             )}
           </div>
-          <button
-            className={"toggle" + (paper.readAt ? " current" : "")}
-            onClick={() => onChange({ ...paper, readAt: paper.readAt ? null : new Date().toISOString() })}
-            title={paper.readAt ? "Marked read — click to unmark" : "Mark as read"}
-          >
-            {paper.readAt ? "✓" : "○"}
-          </button>
-          <button
-            className="toggle"
-            onClick={() => setPresenting(true)}
-            disabled={paper.highlights.length === 0}
-            title="Present highlights"
-          >
-            ▶
-          </button>
+          <div className="card-list-wrap reader-list-wrap" ref={moreWrapRef}>
+            <button
+              className={"toggle" + (moreOpen ? " current" : "")}
+              onClick={() => setMoreOpen((o) => !o)}
+              title="More actions"
+            >
+              ⋯
+            </button>
+            {moreOpen && (
+              <div className="list-menu">
+                <button
+                  className="list-menu-item"
+                  onClick={() => {
+                    onChange({ ...paper, readAt: paper.readAt ? null : new Date().toISOString() });
+                    setMoreOpen(false);
+                  }}
+                >
+                  <span className="list-menu-check">{paper.readAt ? "✓" : ""}</span>
+                  <span className="list-menu-name">{paper.readAt ? "Marked read" : "Mark as read"}</span>
+                </button>
+                <button
+                  className="list-menu-item"
+                  disabled={paper.highlights.length === 0}
+                  onClick={() => {
+                    setPresenting(true);
+                    setMoreOpen(false);
+                  }}
+                >
+                  <span className="list-menu-check">▶</span>
+                  <span className="list-menu-name">Present highlights</span>
+                </button>
+                <button
+                  className="list-menu-item"
+                  onClick={() => {
+                    onShare(paper);
+                    setMoreOpen(false);
+                  }}
+                >
+                  <span className="list-menu-check">⇪</span>
+                  <span className="list-menu-name">Share…</span>
+                </button>
+              </div>
+            )}
+          </div>
           <span className="bar-divider" />
           <button
             className={"toggle" + (rightPanel === "toc" ? " current" : "")}

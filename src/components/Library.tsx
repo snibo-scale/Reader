@@ -32,10 +32,11 @@ interface CardProps {
   onChangeLists: (next: ReadingList[]) => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  onShare: (p: Paper) => void;
   onUpdate: (p: Paper) => void;
 }
 
-function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete, onUpdate }: CardProps) {
+function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete, onShare, onUpdate }: CardProps) {
   const topic = paper.index?.topics[0];
   const background = topic ? tagTint(topic) : "var(--paper)";
   const [menuOpen, setMenuOpen] = useState(false);
@@ -123,6 +124,16 @@ function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete, onUpdate }: 
             ⧉
           </button>
           <button
+            className="card-win"
+            title="Share (export with annotations)"
+            onClick={(e) => {
+              e.stopPropagation();
+              onShare(paper);
+            }}
+          >
+            ⇪
+          </button>
+          <button
             className="card-del"
             title="Delete"
             onClick={(e) => {
@@ -150,6 +161,7 @@ interface Props {
   onDismissNote: () => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  onShare: (p: Paper) => void;
   onUpdate: (p: Paper) => void;
   onImported: (p: Paper) => void;
   lists: ReadingList[];
@@ -168,6 +180,7 @@ export default function Library({
   onDismissNote,
   onOpen,
   onDelete,
+  onShare,
   onUpdate,
   onImported,
   lists,
@@ -443,6 +456,7 @@ export default function Library({
                   onChangeLists={onChangeLists}
                   onOpen={onOpen}
                   onDelete={onDelete}
+                  onShare={onShare}
                   onUpdate={onUpdate}
                 />
               ))}

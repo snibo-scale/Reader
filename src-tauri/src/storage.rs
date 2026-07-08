@@ -852,6 +852,85 @@ pub async fn import_library(
     Ok(ImportResult { imported, skipped, total })
 }
 
+/// One shared paper: its metadata + annotations plus the actual file bytes,
+/// base64-encoded so the whole thing is a single self-contained JSON file.
+/// Unlike a library backup this needs no arXiv redownload — PDFs and imported
+/// webpages both travel with their content.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaperFile {
+    pub version: u32,
+    pub paper: Paper,
+    pub file_base64: String,
+}
+
+/// Write one paper (metadata, highlights, notes, sessions) with its file bytes
+/// bundled to `path` as a shareable `.reader` file.
+#[tauri::command]
+pub fn export_paper(
+    state: State<'_, Mutex<Library>>,
+    id: String,
+    path: String,
+) -> Result<(), String> {
+    use base64::Engine;
+    let lib = state.lock().unwrap();
+    let paper = lib.papers.iter().find(|p| p.id == id).ok_or("paper not found")?;
+    let bytes = std::fs::read(lib.papers_dir().join(&paper.file_name))
+        .map_err(|e| format!("read failed: {e}"))?;
+    let bundle = PaperFile {
+        version: 1,
+        paper: paper.clone(),
+        file_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+    };
+    let s = serde_json::to_string(&bundle).map_err(|e| e.to_string())?;
+    std::fs::write(&path, s).map_err(|e| format!("write failed: {e}"))?;
+    Ok(())
+}
+
+/// Import a shared `.reader` file: recover the file bytes and re-attach all its
+/// annotations under a fresh id. Rejected if the same content is already present.
+#[tauri::command]
+pub fn import_paper_file(state: State<'_, Mutex<Library>>, path: String) -> Result<Paper, String> {
+    use base64::Engine;
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("read failed: {e}"))?;
+    let bundle: PaperFile =
+        serde_json::from_str(&text).map_err(|e| format!("Not a valid shared paper: {e}"))?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(bundle.file_base64.as_bytes())
+        .map_err(|e| format!("corrupt file data: {e}"))?;
+    let hash = sha256_hex(&bytes);
+
+    let mut paper = bundle.paper;
+    // Preserve the extension (.pdf / .md) so the reader picks the right renderer.
+    let ext = std::path::Path::new(&paper.file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("pdf");
+
+    let mut lib = state.lock().unwrap();
+    if let Some(dup) = lib.find_duplicate(&hash, paper.source_key.as_deref()) {
+        return Err(format!("Already in your library: \"{}\"", dup.title));
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let file_name = format!("{id}.{ext}");
+    std::fs::create_dir_all(lib.papers_dir()).map_err(|e| e.to_string())?;
+    std::fs::write(lib.papers_dir().join(&file_name), &bytes).map_err(|e| e.to_string())?;
+
+    // Fresh identity + local-only view state; annotations ride along unchanged.
+    paper.id = id;
+    paper.file_name = file_name;
+    paper.color = COLORS[lib.papers.len() % COLORS.len()].to_string();
+    paper.added_at = now_iso();
+    paper.last_opened_at = None;
+    paper.reading_progress = None;
+    paper.pinned_at = None;
+    paper.home_order = None;
+    paper.content_hash = Some(hash);
+    lib.papers.push(paper.clone());
+    lib.save();
+    Ok(paper)
+}
+
 #[tauri::command]
 pub fn read_pdf_bytes(state: State<'_, Mutex<Library>>, id: String) -> Result<Response, String> {
     let lib = state.lock().unwrap();

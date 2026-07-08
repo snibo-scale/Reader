@@ -646,6 +646,11 @@ button {
 .crumbs {
   font-size: 17px;
   color: var(--ink);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .crumbs .sep {
   color: var(--muted);
@@ -1655,6 +1660,8 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
+  margin-left: 16px;
 }
 .reader-tools button {
   background: var(--paper);

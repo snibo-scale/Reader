@@ -37,6 +37,8 @@ pub fn run() {
             storage::import_markdown,
             storage::export_library,
             storage::import_library,
+            storage::export_paper,
+            storage::import_paper_file,
             ai::ask_ai,
             ai::run_prompt,
             ai::suggest_queries,

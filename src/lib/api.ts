@@ -55,6 +55,12 @@ export const importFromResearch = () => invoke<ImportResult>("import_from_resear
 export const exportLibrary = (path: string) => invoke<number>("export_library", { path });
 export const importLibrary = (path: string) => invoke<ImportResult>("import_library", { path });
 
+/** Write one paper + its file bytes + annotations to a shareable `.reader` file. */
+export const exportPaper = (id: string, path: string) => invoke<void>("export_paper", { id, path });
+
+/** Import a shared `.reader` file, recovering its file and annotations. */
+export const importPaperFile = (path: string) => invoke<Paper>("import_paper_file", { path });
+
 export const importFromUrl = (url: string) => invoke<Paper>("import_from_url", { url });
 
 /** Fetch a webpage's raw HTML (backend, to dodge webview CORS). */
