@@ -172,6 +172,9 @@ export default function Library({
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  // Live offset of the card being dragged, so it follows the cursor.
+  const [lift, setLift] = useState<{ i: number; dx: number; dy: number } | null>(null);
   // Track how many columns currently fit so we can lay cards out row-major
   // (left-to-right, then top-to-bottom) while still packing each column with no
   // vertical gaps — CSS multi-column would pack column-major and break the order.
@@ -205,7 +208,13 @@ export default function Library({
     const recent = papers
       .filter((p) => p.lastOpenedAt && !p.readAt && !pinnedIds.has(p.id))
       .sort((a, b) => (b.lastOpenedAt ?? "").localeCompare(a.lastOpenedAt ?? ""));
-    return [...pinned, ...recent.slice(0, Math.max(0, 5 - pinned.length))];
+    const base = [...pinned, ...recent.slice(0, Math.max(0, 5 - pinned.length))];
+    // Manual drag order (homeOrder) wins; papers without one keep their natural
+    // pin/recency position as the tiebreak.
+    const natural = new Map(base.map((p, i) => [p.id, i]));
+    return [...base].sort(
+      (a, b) => (a.homeOrder ?? natural.get(a.id)!) - (b.homeOrder ?? natural.get(b.id)!)
+    );
   }, [mode, papers]);
   const shown = useMemo(
     () => {
@@ -219,6 +228,49 @@ export default function Library({
     [mode, sorted, continueReading]
   );
   const hasGrid = shown.length > 0;
+
+  // Strip reorder via pointer events. HTML5 drag-and-drop is unreliable in Tauri's
+  // WKWebView (dragover/drop don't fire consistently), so we track the pointer
+  // ourselves. preventDefault on pointerdown stops the native text selection; a 4px
+  // threshold distinguishes a reorder from a tap-to-open. On release we splice the
+  // moved card in and persist every position as homeOrder so it survives reloads.
+  const drag = useRef<{ from: number; x: number; y: number; moved: boolean } | null>(null);
+  const onCardPointerDown = (e: React.PointerEvent, i: number) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    drag.current = { from: i, x: e.clientX, y: e.clientY, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onCardPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    if (!d.moved) {
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
+      d.moved = true;
+    }
+    setLift({ i: d.from, dx: e.clientX - d.x, dy: e.clientY - d.y });
+    // elementsFromPoint (plural) so the lifted card on top doesn't mask the one beneath.
+    const target = (document.elementsFromPoint(e.clientX, e.clientY) as HTMLElement[]).find(
+      (el) => el.classList?.contains("continue-card") && el.dataset.idx !== String(d.from)
+    );
+    setOverIndex(target?.dataset.idx ? Number(target.dataset.idx) : null);
+  };
+  const onCardPointerUp = (id: string) => {
+    const d = drag.current;
+    const to = overIndex;
+    drag.current = null;
+    setOverIndex(null);
+    setLift(null);
+    if (!d) return;
+    if (!d.moved) { onOpen(id); return; } // no real movement → treat as a tap
+    if (to === null || to === d.from) return;
+    const next = [...continueReading];
+    const [moved] = next.splice(d.from, 1);
+    next.splice(to, 0, moved);
+    next.forEach((p, i) => {
+      if (p.homeOrder !== i) onUpdate({ ...p, homeOrder: i });
+    });
+  };
 
   useEffect(() => {
     const el = gridRef.current;
@@ -313,19 +365,32 @@ export default function Library({
       {continueReading.length > 0 && (
         <>
           <div className="continue-row">
-            {continueReading.map((p) => {
+            {continueReading.map((p, i) => {
               const topic = p.index?.topics[0];
               const pct = Math.round((p.readingProgress ?? 0) * 100);
               return (
                 <div
                   key={p.id}
-                  className="continue-card"
-                  style={{ background: topic ? tagTint(topic) : "var(--paper)" }}
-                  onClick={() => onOpen(p.id)}
+                  data-idx={i}
+                  className={"continue-card" + (overIndex === i ? " drag-over" : "")}
+                  style={{
+                    background: topic ? tagTint(topic) : "var(--paper)",
+                    ...(lift?.i === i && {
+                      transform: `translate(${lift.dx}px, ${lift.dy}px)`,
+                      transition: "none",
+                      zIndex: 10,
+                      opacity: 0.9,
+                      cursor: "grabbing",
+                    }),
+                  }}
+                  onPointerDown={(e) => onCardPointerDown(e, i)}
+                  onPointerMove={onCardPointerMove}
+                  onPointerUp={() => onCardPointerUp(p.id)}
                 >
                   <button
                     className={"continue-pin" + (p.pinnedAt ? " on" : "")}
                     title={p.pinnedAt ? "Unpin" : "Pin here"}
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
                       onUpdate({ ...p, pinnedAt: p.pinnedAt ? null : new Date().toISOString() });

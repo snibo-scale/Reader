@@ -63,6 +63,8 @@ export interface Paper {
   readingProgress?: number | null;
   /** ISO timestamp when pinned; pinned papers sort to the top of the library. */
   pinnedAt?: string | null;
+  /** Manual position in the Home "continue reading" strip; unset = fall back to pin/recency order. */
+  homeOrder?: number | null;
   sourceKey?: string | null;
   /** SHA-256 of the PDF bytes; used to detect duplicate imports. */
   contentHash?: string | null;

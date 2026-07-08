@@ -105,6 +105,9 @@ pub struct Paper {
     /// ISO timestamp when pinned; pinned papers sort to the top of the library.
     #[serde(default)]
     pub pinned_at: Option<String>,
+    /// Manual position in the Home "continue reading" strip; None = pin/recency order.
+    #[serde(default)]
+    pub home_order: Option<i64>,
     /// Legacy single-list position (v2.0-dev). Migrated into a named reading list
     /// on load, then cleared and never written again (skipped when None).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -349,6 +352,7 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
         read_at: None,
         reading_progress: None,
         pinned_at: None,
+        home_order: None,
         reading_order: None,
         source_key: None,
         content_hash: Some(hash),
@@ -522,6 +526,7 @@ WHERE i.deleted_at IS NULL;";
         read_at: None,
         reading_progress: None,
         pinned_at: None,
+            home_order: None,
             reading_order: None,
             source_key: if key.is_empty() { None } else { Some(key.clone()) },
             content_hash: Some(hash.clone()),
@@ -627,6 +632,7 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         read_at: None,
         reading_progress: None,
         pinned_at: None,
+        home_order: None,
         reading_order: None,
         source_key,
         content_hash: Some(hash),
@@ -860,6 +866,7 @@ mod tests {
             read_at: None,
             reading_progress: None,
             pinned_at: None,
+            home_order: None,
             reading_order: None,
             source_key: Some("2401.00001".into()),
             content_hash: Some("abc".into()),

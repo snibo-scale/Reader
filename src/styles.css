@@ -2271,15 +2271,24 @@ button {
   border: 1px solid rgba(0, 0, 0, 0.05);
   border-radius: 14px;
   padding: 14px 16px;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
   display: flex;
   flex-direction: column;
   gap: 6px;
   transition: transform 0.08s ease, box-shadow 0.12s ease;
 }
+.continue-card:active {
+  cursor: grabbing;
+}
 .continue-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+.continue-card.drag-over {
+  box-shadow: -3px 0 0 0 var(--accent, #4c7cf0);
 }
 .continue-title {
   font-weight: 600;
