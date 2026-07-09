@@ -1,11 +1,14 @@
 import type { Provider } from "../types";
 
+export type Theme = "minimal" | "classic";
+
 export interface Settings {
   aiProvider: Provider;
   aiModel: string;
   aiInstructions: string;
   indexPrompt: string;
   refsPrompt: string;
+  theme: Theme;
 }
 
 // `{{text}}` is replaced with the (truncated) paper text before the prompt is sent.
@@ -43,6 +46,7 @@ const DEFAULTS: Settings = {
   aiInstructions: "",
   indexPrompt: DEFAULT_INDEX_PROMPT,
   refsPrompt: DEFAULT_REFS_PROMPT,
+  theme: "minimal",
 };
 
 export function getSettings(): Settings {
@@ -55,6 +59,11 @@ export function getSettings(): Settings {
 
 export function saveSettings(s: Settings): void {
   localStorage.setItem(KEY, JSON.stringify(s));
+}
+
+/** Reflect the chosen theme onto <html data-theme>; CSS + tagTint switch off it. */
+export function applyTheme(t?: Theme): void {
+  document.documentElement.dataset.theme = t ?? getSettings().theme;
 }
 
 /** The configured default provider, used by indexing / Q&A / recommendations / chat. */

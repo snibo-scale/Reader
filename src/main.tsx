@@ -2,7 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import Workspace from "./components/Workspace";
+import { applyTheme } from "./lib/settings";
 import "./styles.css";
+
+applyTheme(); // reflect the saved theme before first paint
 
 // A dedicated ?workspace=<id> window shows just the Notes + AI screen for one
 // paper; everything else boots the full app.

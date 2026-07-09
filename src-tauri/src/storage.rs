@@ -113,6 +113,9 @@ pub struct Paper {
     /// Manual position in the Home "continue reading" strip; None = pin/recency order.
     #[serde(default)]
     pub home_order: Option<i64>,
+    /// Kanban board column override: "todo" | "reading" | "done". None = derive from read/progress.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board_status: Option<String>,
     /// "markdown" for imported webpages; None/absent = a PDF paper.
     #[serde(default)]
     pub kind: Option<String>,
@@ -361,6 +364,7 @@ pub fn import_paper(state: State<'_, Mutex<Library>>, path: String) -> Result<Pa
         reading_progress: None,
         pinned_at: None,
         home_order: None,
+        board_status: None,
         kind: None,
         reading_order: None,
         source_key: None,
@@ -536,6 +540,7 @@ WHERE i.deleted_at IS NULL;";
         reading_progress: None,
         pinned_at: None,
             home_order: None,
+            board_status: None,
             kind: None,
             reading_order: None,
             source_key: if key.is_empty() { None } else { Some(key.clone()) },
@@ -643,6 +648,7 @@ pub async fn import_from_url(state: State<'_, Mutex<Library>>, url: String) -> R
         reading_progress: None,
         pinned_at: None,
         home_order: None,
+        board_status: None,
         kind: None,
         reading_order: None,
         source_key,
@@ -724,6 +730,7 @@ pub fn import_markdown(
         reading_progress: None,
         pinned_at: None,
         home_order: None,
+        board_status: None,
         kind: Some("markdown".into()),
         reading_order: None,
         source_key,
@@ -1038,6 +1045,7 @@ mod tests {
             reading_progress: None,
             pinned_at: None,
             home_order: None,
+            board_status: None,
             kind: None,
             reading_order: None,
             source_key: Some("2401.00001".into()),
@@ -1100,6 +1108,7 @@ mod tests {
             reading_progress: None,
             pinned_at: None,
             home_order: None,
+            board_status: None,
             kind: None,
             reading_order: None,
             source_key: None,

@@ -6,6 +6,7 @@ import type { Paper } from "../types";
 import {
   getSettings,
   saveSettings,
+  applyTheme,
   type Settings,
   DEFAULT_INDEX_PROMPT,
   DEFAULT_REFS_PROMPT,
@@ -62,6 +63,34 @@ export default function SettingsView({ papers, importing, onExport, onImportBack
           <strong>Settings</strong>
         </div>
       </header>
+
+      <section className="set-group">
+        <h3>Appearance</h3>
+        <div className="set-row">
+          <label>Colour scheme</label>
+          <div className="provider">
+            <button
+              className={s.theme === "minimal" ? "current" : ""}
+              onClick={() => {
+                update({ theme: "minimal" });
+                applyTheme("minimal");
+              }}
+            >
+              Minimal
+            </button>
+            <button
+              className={s.theme === "classic" ? "current" : ""}
+              onClick={() => {
+                update({ theme: "classic" });
+                applyTheme("classic");
+              }}
+            >
+              Classic
+            </button>
+          </div>
+        </div>
+        <p className="set-hint">Minimal is the cool silver &amp; slate-blue theme; Classic is the original warm cream &amp; green.</p>
+      </section>
 
       <section className="set-group">
         <h3>AI</h3>

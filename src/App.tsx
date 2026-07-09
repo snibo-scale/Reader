@@ -28,6 +28,7 @@ const SearchView = lazy(() => import("./components/SearchView"));
 const Timeline = lazy(() => import("./components/Timeline"));
 const Highlights = lazy(() => import("./components/Highlights"));
 const ReadingLists = lazy(() => import("./components/ReadingLists"));
+const Board = lazy(() => import("./components/Board"));
 const SettingsView = lazy(() => import("./components/SettingsView"));
 
 export default function App() {
@@ -338,6 +339,8 @@ export default function App() {
         onOpen={openPaper}
       />
     );
+  } else if (view === "board") {
+    main = <Board papers={papers} onOpen={openPaper} onUpdate={handleUpdate} />;
   } else if (view === "timeline") {
     main = <Timeline papers={papers} onOpen={openPaper} />;
   } else if (view === "reading") {

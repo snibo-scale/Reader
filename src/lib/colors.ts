@@ -32,7 +32,11 @@ export function tagChipColors(name: string): { background: string; color: string
   return { background: `color-mix(in srgb, ${a.solid} 22%, ${PAPER})`, color: a.deep };
 }
 
-/** A faint wash of the tag's color, for card / timeline backgrounds. */
-export function tagTint(name: string, pct = 14): string {
-  return `color-mix(in srgb, ${accent(name).solid} ${pct}%, ${PAPER})`;
+/** Paper card / timeline background. Classic theme = the original per-topic wash on
+   cream; minimal theme = a uniform, faint silver-blue wash on white. */
+export function tagTint(name: string, pct = 15): string {
+  if (document.documentElement.dataset.theme === "classic") {
+    return `color-mix(in srgb, ${accent(name).solid} 14%, ${PAPER})`;
+  }
+  return `color-mix(in srgb, var(--accent) ${pct}%, #ffffff)`;
 }

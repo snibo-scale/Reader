@@ -70,6 +70,8 @@ export interface Paper {
   pinnedAt?: string | null;
   /** Manual position in the Home "continue reading" strip; unset = fall back to pin/recency order. */
   homeOrder?: number | null;
+  /** Kanban board column override; unset = derive from readAt/readingProgress. */
+  boardStatus?: "todo" | "reading" | "done" | null;
   sourceKey?: string | null;
   /** SHA-256 of the PDF bytes; used to detect duplicate imports. */
   contentHash?: string | null;
