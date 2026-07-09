@@ -1,6 +1,6 @@
 [package]
 name = "reader"
-version = "4.0.3"
+version = "4.0.4"
 description = "A local research-paper reader with Claude/Codex integration"
 authors = ["you"]
 edition = "2021"
@@ -27,8 +27,16 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["clock"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
+# Faster compiles, not smallest binary. This is a desktop reader, not a
+# CPU-bound tool, so full LTO + a single codegen unit cost build minutes for
+# runtime gains it never needs. Use "thin" LTO if binary size regresses.
 [profile.release]
-codegen-units = 1
-lto = true
+codegen-units = 16
+lto = false
 opt-level = "s"
 strip = true
+
+# Skip full debuginfo in the dev edit→rebuild loop — keep line tables so
+# backtraces still point at source, but cut the slowest part of the compile.
+[profile.dev]
+debug = "line-tables-only"
