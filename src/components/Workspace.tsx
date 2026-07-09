@@ -3,7 +3,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { Paper } from "../types";
-import { analyzePaper, extractReferences, listPapers, readPaperText, updatePaper } from "../lib/api";
+import { analyzePaper, extractReferences, getPaper, listPapers, readPaperText, updatePaper } from "../lib/api";
 import { extractTailText, type Heading } from "../lib/pdf";
 import { getPdfDoc, getPdfHeadings, getPdfText } from "../lib/pdfCache";
 import { parseAnalysis, parseReferences } from "../lib/metadata";
@@ -37,10 +37,12 @@ export default function Workspace({ id }: { id: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    listPapers().then((ps) => {
+    // The light list (for the "in library" reference check) plus the full target
+    // paper (get_paper), since list_papers strips sessions + references.
+    Promise.all([listPapers(), getPaper(id)]).then(([ps, full]) => {
       if (cancelled) return;
       setPapers(ps);
-      setPaper(ps.find((p) => p.id === id) ?? null);
+      setPaper(full ?? ps.find((p) => p.id === id) ?? null);
     });
     return () => {
       cancelled = true;

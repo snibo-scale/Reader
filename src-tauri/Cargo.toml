@@ -1,6 +1,6 @@
 [package]
 name = "reader"
-version = "4.0.2"
+version = "4.0.3"
 description = "A local research-paper reader with Claude/Codex integration"
 authors = ["you"]
 edition = "2021"

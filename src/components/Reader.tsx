@@ -24,6 +24,8 @@ interface Props {
   indexing: boolean;
   onBack: () => void;
   onChange: (p: Paper) => void;
+  /** Persist just the scroll fraction (granular; avoids a whole-paper write). */
+  onProgress: (id: string, progress: number) => void;
   onOpenPaper: (id: string) => void;
   onShare: (p: Paper) => void;
   lists: ReadingList[];
@@ -89,7 +91,7 @@ function selectionTextFromGeometry(range: Range, layer: HTMLElement): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export default function Reader({ paper, papers, indexing, onBack, onChange, onOpenPaper, onShare, lists, onChangeLists }: Props) {
+export default function Reader({ paper, papers, indexing, onBack, onChange, onProgress, onOpenPaper, onShare, lists, onChangeLists }: Props) {
   const isMd = paper.kind === "markdown";
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [mdText, setMdText] = useState<string | null>(null);
@@ -136,7 +138,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
       const p = paperRef.current;
       const frac = progressRef.current;
       if (Math.abs((p.readingProgress ?? 0) - frac) > 0.005) {
-        onChange({ ...p, readingProgress: frac });
+        onProgress(p.id, frac);
       }
     };
     const t = setInterval(save, 5000);
@@ -146,7 +148,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
       window.removeEventListener("pagehide", save);
       save();
     };
-  }, [onChange]);
+  }, [onProgress]);
 
   const inAnyList = lists.some((l) => l.paperIds.includes(paper.id));
 

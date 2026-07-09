@@ -282,7 +282,9 @@ impl Library {
     }
 
     pub fn save(&self) {
-        if let Ok(s) = serde_json::to_string_pretty(&self.papers) {
+        // Compact, not pretty: library.json is machine-read and can be large, so
+        // skip the whitespace — faster to serialize and smaller on disk.
+        if let Ok(s) = serde_json::to_string(&self.papers) {
             // Write-then-rename so a crash mid-write can't corrupt the library.
             let tmp = self.dir.join("library.json.tmp");
             let res = std::fs::write(&tmp, s)
@@ -325,7 +327,21 @@ pub fn list_papers(state: State<'_, Mutex<Library>>) -> Vec<Paper> {
         }
     };
     v.sort_by_key(|p| std::cmp::Reverse(recency(p)));
+    // Strip the heavy per-paper data the collection views never touch (chat
+    // sessions + extracted references). The full paper is fetched on open via
+    // get_paper — this keeps the startup IPC payload small for big libraries.
+    for p in v.iter_mut() {
+        p.sessions.clear();
+        p.references = None;
+    }
     v
+}
+
+/// The full paper (including chat sessions + references), by id. Used when opening
+/// a paper, since list_papers strips those to keep the collection payload light.
+#[tauri::command]
+pub fn get_paper(state: State<'_, Mutex<Library>>, id: String) -> Option<Paper> {
+    state.lock().unwrap().papers.iter().find(|p| p.id == id).cloned()
 }
 
 #[tauri::command]
@@ -984,6 +1000,50 @@ pub fn update_paper(
         }
         None => Err("paper not found".into()),
     }
+}
+
+/// Persist just the scroll position. Fires every few seconds while reading, so it
+/// avoids shipping the whole paper (highlights + chat sessions) across the IPC
+/// boundary each tick.
+#[tauri::command]
+pub fn set_reading_progress(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<Library>>,
+    id: String,
+    progress: f64,
+) -> Result<(), String> {
+    let mut lib = state.lock().unwrap();
+    match lib.papers.iter_mut().find(|p| p.id == id) {
+        Some(p) => {
+            p.reading_progress = Some(progress);
+            drop(lib);
+            schedule_save(app);
+            Ok(())
+        }
+        None => Err("paper not found".into()),
+    }
+}
+
+/// Persist a single highlight's note without re-sending the whole paper.
+#[tauri::command]
+pub fn set_highlight_note(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<Library>>,
+    id: String,
+    highlight_id: String,
+    note: String,
+) -> Result<(), String> {
+    let mut lib = state.lock().unwrap();
+    let paper = lib.papers.iter_mut().find(|p| p.id == id).ok_or("paper not found")?;
+    let hl = paper
+        .highlights
+        .iter_mut()
+        .find(|h| h.id == highlight_id)
+        .ok_or("highlight not found")?;
+    hl.note = if note.is_empty() { None } else { Some(note) };
+    drop(lib);
+    schedule_save(app);
+    Ok(())
 }
 
 #[tauri::command]

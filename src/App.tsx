@@ -5,6 +5,7 @@ import {
   deletePaper,
   exportLibrary,
   exportPaper,
+  getPaper,
   importFromResearch,
   importFromUrl,
   importLibrary,
@@ -12,7 +13,9 @@ import {
   importPaperFile,
   listPapers,
   listReadingLists,
+  saveHighlightNote,
   saveReadingLists,
+  setReadingProgress,
   updatePaper,
 } from "./lib/api";
 import { needsIndexing } from "./lib/indexStatus";
@@ -80,7 +83,6 @@ export default function App() {
       year: u.year,
       authors: u.authors,
       index: u.index,
-      references: u.references,
     };
     setPapers((list) => list.map((x) => (x.id === id ? merged : x)));
     updatePaper(merged);
@@ -110,18 +112,26 @@ export default function App() {
     [applyIndexResult]
   );
 
-  // On launch: pull in anything from the un.ms Research app (idempotent / de-duped).
+  // Show the library as soon as it loads — don't block first paint on the
+  // optional Research import round-trip below.
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  // Then, in the background, pull in anything from the un.ms Research app
+  // (idempotent / de-duped) and re-list only if it actually added something.
   useEffect(() => {
     if (importedOnce.current) return;
     importedOnce.current = true;
     (async () => {
       try {
         const res = await importFromResearch();
-        if (res.imported > 0) setImportNote(`Imported ${res.imported} paper(s) from Research`);
+        if (res.imported > 0) {
+          setImportNote(`Imported ${res.imported} paper(s) from Research`);
+          await refresh();
+        }
       } catch {
         /* Research app not present — ignore */
-      } finally {
-        await refresh();
       }
     })();
   }, [refresh]);
@@ -227,9 +237,9 @@ export default function App() {
     await updatePaper(paper);
   }, []);
 
-  // Index every un-indexed paper, one at a time, in the background. A paper counts
-  // as un-indexed until both its analysis and references are done; buildIndex runs
-  // only the missing steps, so already-indexed papers are skipped.
+  // Index every un-indexed paper in the background, a few at a time. A shared
+  // cursor feeds N workers so several analyses run concurrently without spawning
+  // one CLI process per paper all at once.
   const handleIndexAll = useCallback(async () => {
     const todo = papers.filter(needsIndexing).map((p) => p.id);
     if (todo.length === 0) {
@@ -238,20 +248,34 @@ export default function App() {
     }
     setIndexProgress({ done: 0, total: todo.length });
     const { buildIndex } = await import("./lib/indexer");
-    for (let i = 0; i < todo.length; i++) {
-      // Re-read the latest paper each iteration: it may have been edited (or
-      // already indexed in the background) since the button was clicked.
-      const current = papersRef.current.find((p) => p.id === todo[i]);
-      if (current && needsIndexing(current) && !indexingRef.current.has(current.id)) {
-        try {
-          const updated = await buildIndex(current, getProvider(), getModel());
-          if (updated) applyIndexResult(current.id, updated);
-        } catch {
-          /* skip papers that fail to index */
+    // ponytail: fixed pool of 3; raise if the CLI comfortably handles more.
+    const CONCURRENCY = 3;
+    let cursor = 0;
+    let done = 0;
+    const worker = async () => {
+      while (cursor < todo.length) {
+        const id = todo[cursor++];
+        // Re-read the latest paper: it may have been edited or already indexed
+        // in the background since the button was clicked. Skip if another job
+        // (ensureIndexed) is already on it.
+        const current = papersRef.current.find((p) => p.id === id);
+        if (current && needsIndexing(current) && !indexingRef.current.has(id)) {
+          indexingRef.current.add(id);
+          setIndexingIds(new Set(indexingRef.current));
+          try {
+            const updated = await buildIndex(current, getProvider(), getModel());
+            if (updated) applyIndexResult(id, updated);
+          } catch {
+            /* skip papers that fail to index */
+          } finally {
+            indexingRef.current.delete(id);
+            setIndexingIds(new Set(indexingRef.current));
+          }
         }
+        setIndexProgress({ done: ++done, total: todo.length });
       }
-      setIndexProgress({ done: i + 1, total: todo.length });
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
     setIndexProgress(null);
     setImportNote(`Indexed ${todo.length} paper(s)`);
   }, [papers, applyIndexResult]);
@@ -268,13 +292,18 @@ export default function App() {
 
   const openPaper = useCallback(
     (id: string) => {
-      setActiveId(id);
+      setActiveId(id); // show the reader immediately
       const target = papersRef.current.find((p) => p.id === id);
       if (!target) return;
-      const updated: Paper = { ...target, lastOpenedAt: new Date().toISOString() };
-      setPapers((list) => list.map((p) => (p.id === id ? updated : p)));
-      updatePaper(updated);
-      ensureIndexed(updated); // continue/start background indexing (survives exit)
+      const lastOpenedAt = new Date().toISOString();
+      // list_papers strips chat sessions + references for weight; fetch the full
+      // paper on open and merge it in, so the reader has everything.
+      getPaper(id).then((full) => {
+        const merged: Paper = { ...(full ?? target), lastOpenedAt };
+        setPapers((list) => list.map((p) => (p.id === id ? merged : p)));
+        updatePaper(merged);
+        ensureIndexed(merged); // continue/start background indexing (survives exit)
+      });
     },
     [ensureIndexed]
   );
@@ -297,11 +326,17 @@ export default function App() {
   );
 
   const handleUpdateNote = useCallback((paperId: string, highlightId: string, note: string) => {
-    const p = papersRef.current.find((x) => x.id === paperId);
-    if (!p) return;
-    const updated = setHighlightNote(p, highlightId, note);
-    setPapers((list) => list.map((x) => (x.id === paperId ? updated : x)));
-    updatePaper(updated);
+    setPapers((list) =>
+      list.map((x) => (x.id === paperId ? setHighlightNote(x, highlightId, note) : x))
+    );
+    saveHighlightNote(paperId, highlightId, note); // granular: no whole-paper round-trip
+  }, []);
+
+  // Reading progress fires every few seconds while reading — persist just the
+  // fraction, and mirror it in state so Home's "continue reading" stays current.
+  const handleReadingProgress = useCallback((id: string, progress: number) => {
+    setPapers((list) => list.map((p) => (p.id === id ? { ...p, readingProgress: progress } : p)));
+    setReadingProgress(id, progress);
   }, []);
 
   const navigate = useCallback((v: View) => {
@@ -321,6 +356,7 @@ export default function App() {
         indexing={indexingIds.has(active.id)}
         onBack={() => setActiveId(null)}
         onChange={handleUpdate}
+        onProgress={handleReadingProgress}
         onOpenPaper={openPaper}
         onShare={handleShare}
         lists={lists}

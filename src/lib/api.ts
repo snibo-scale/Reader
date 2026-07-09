@@ -3,9 +3,17 @@ import type { Paper, Provider, ReadingList } from "../types";
 import { getIndexPrompt, getRefsPrompt } from "./settings";
 
 export const listPapers = () => invoke<Paper[]>("list_papers");
+/** The full paper (chat sessions + references), which list_papers strips for weight. */
+export const getPaper = (id: string) => invoke<Paper | null>("get_paper", { id });
 export const importPaper = (path: string) => invoke<Paper>("import_paper", { path });
 export const deletePaper = (id: string) => invoke<void>("delete_paper", { id });
 export const updatePaper = (paper: Paper) => invoke<void>("update_paper", { paper });
+/** Persist only the scroll fraction — used by the reader's periodic progress save. */
+export const setReadingProgress = (id: string, progress: number) =>
+  invoke<void>("set_reading_progress", { id, progress });
+/** Persist a single highlight's note without re-sending the whole paper. */
+export const saveHighlightNote = (id: string, highlightId: string, note: string) =>
+  invoke<void>("set_highlight_note", { id, highlightId, note });
 
 export const listReadingLists = () => invoke<ReadingList[]>("list_reading_lists");
 export const saveReadingLists = (lists: ReadingList[]) =>

@@ -11,9 +11,10 @@ export function needsReferences(p: Paper): boolean {
 }
 
 /**
- * A paper isn't fully indexed until BOTH its analysis and its references are
- * done.
+ * Whether background indexing has work to do. Analysis only — reference
+ * extraction is lazy (run on demand from the References panel), so it no longer
+ * keeps a paper "unindexed".
  */
 export function needsIndexing(p: Paper): boolean {
-  return needsAnalysis(p) || needsReferences(p);
+  return needsAnalysis(p);
 }

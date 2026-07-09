@@ -1,9 +1,8 @@
 import type { Analysis } from "./metadata";
 import type { Paper, Provider } from "../types";
-import { analyzePaper, extractReferences, readPaperText } from "./api";
+import { analyzePaper, readPaperText } from "./api";
 import { getPdfDoc, getPdfText } from "./pdfCache";
-import { extractTailText } from "./pdf";
-import { parseAnalysis, parseReferences } from "./metadata";
+import { parseAnalysis } from "./metadata";
 import { canonicalTag } from "./canonical";
 import { needsAnalysis, needsIndexing, needsReferences } from "./indexStatus";
 
@@ -29,72 +28,34 @@ export function applyAnalysis(paper: Paper, a: Analysis): Paper {
 export { needsAnalysis, needsIndexing, needsReferences };
 
 /**
- * Index a paper from disk: run ONLY the steps that haven't been done yet
- * (analysis and/or reference extraction), persisting both. Never re-runs a call
- * whose result is already stored. Returns the updated paper, or null if nothing
- * changed / failed.
+ * Index a paper from disk. Background indexing is ANALYSIS ONLY (summary/topics/
+ * metadata) — reference extraction is lazy, run on demand from the References
+ * panel (Workspace.reExtractRefs), since it's the slowest call and often unused.
+ * Returns the updated paper, or null if nothing changed / failed.
  */
 export async function buildIndex(
   paper: Paper,
   provider: Provider = "claude",
   model: string | null = null
 ): Promise<Paper | null> {
-  if (!needsIndexing(paper)) return null;
+  if (!needsAnalysis(paper)) return null;
 
-  // Markdown docs (imported webpages) have no PDF: analyse the markdown text and
-  // mark references N/A ([]) so they're considered fully indexed.
-  if (paper.kind === "markdown") {
-    let next = paper;
-    let changed = false;
-    if (needsAnalysis(next)) {
-      try {
-        const text = await readPaperText(paper.id);
-        if (text.trim()) {
-          const a = parseAnalysis(await analyzePaper(text, provider, model));
-          if (a) {
-            next = applyAnalysis(next, a);
-            changed = true;
-          }
-        }
-      } catch {
-        /* retry next time */
-      }
+  try {
+    // Markdown docs (imported webpages) have no PDF and no bibliography: analyse
+    // the markdown text and stamp references N/A ([]).
+    if (paper.kind === "markdown") {
+      const text = await readPaperText(paper.id);
+      if (!text.trim()) return null;
+      const a = parseAnalysis(await analyzePaper(text, provider, model));
+      return a ? { ...applyAnalysis(paper, a), references: paper.references ?? [] } : null;
     }
-    if (needsReferences(next)) {
-      next = { ...next, references: [] };
-      changed = true;
-    }
-    return changed ? next : null;
+
+    const doc = await getPdfDoc(paper.id);
+    const text = await getPdfText(paper.id, doc);
+    if (!text.trim()) return null;
+    const a = parseAnalysis(await analyzePaper(text, provider, model));
+    return a ? applyAnalysis(paper, a) : null;
+  } catch {
+    return null; // leave unindexed; retry next open
   }
-
-  const doc = await getPdfDoc(paper.id);
-  let next = paper;
-  let changed = false;
-
-  if (needsAnalysis(next)) {
-    try {
-      const text = await getPdfText(paper.id, doc);
-      if (text.trim()) {
-        const a = parseAnalysis(await analyzePaper(text, provider, model));
-        if (a) {
-          next = applyAnalysis(next, a);
-          changed = true;
-        }
-      }
-    } catch {
-      /* leave unindexed; retry next time */
-    }
-  }
-
-  if (needsReferences(next)) {
-    try {
-      const tail = await extractTailText(doc);
-      next = { ...next, references: parseReferences(await extractReferences(tail, provider, model)) };
-      changed = true;
-    } catch {
-      /* leave references unset; retry next time */
-    }
-  }
-
-  return changed ? next : null;
 }

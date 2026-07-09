@@ -25,9 +25,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             storage::list_papers,
+            storage::get_paper,
             storage::import_paper,
             storage::read_pdf_bytes,
             storage::update_paper,
+            storage::set_reading_progress,
+            storage::set_highlight_note,
             storage::list_reading_lists,
             storage::save_reading_lists,
             storage::delete_paper,
