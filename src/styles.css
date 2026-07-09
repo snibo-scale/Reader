@@ -536,6 +536,10 @@ button {
   max-height: 240px;
   overflow-y: auto;
 }
+.set-version {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
 .annot-ch.sel {
   background: #eccb60;
   color: var(--ink);

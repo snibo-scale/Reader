@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { Paper } from "../types";
@@ -30,6 +31,10 @@ export default function SettingsView({ papers, importing, onExport, onImportBack
 
   const [upd, setUpd] = useState("");
   const [checking, setChecking] = useState(false);
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
+  }, []);
   const checkUpdate = async () => {
     setChecking(true);
     setUpd("Checking…");
@@ -169,6 +174,10 @@ export default function SettingsView({ papers, importing, onExport, onImportBack
 
       <section className="set-group">
         <h3>Updates</h3>
+        <div className="set-row">
+          <label>Version</label>
+          <span className="set-version">{version || "…"}</span>
+        </div>
         <div className="set-row">
           <label>App updates</label>
           <button className="set-reset" onClick={checkUpdate} disabled={checking}>
