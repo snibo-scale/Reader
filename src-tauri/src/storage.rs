@@ -1050,6 +1050,7 @@ mod tests {
                 id: "h1".into(), page: 1, text: "hi".into(), rects: vec![],
                 color: "#ff0".into(), note: Some("n".into()),
                 created_at: "2024-01-01T00:00:00.000Z".into(),
+                start: None, end: None,
             }],
             notes: Some("paper note".into()),
             chat: vec![],
@@ -1079,5 +1080,65 @@ mod tests {
         assert_eq!(p.sessions[0].messages[0].content, "q");
         assert_eq!(p.references.as_ref().unwrap()[0].title, "R");
         assert_eq!(back.lists[0].paper_ids, vec!["p1".to_string()]);
+    }
+
+    // A shared .reader file must carry references (and the other annotations)
+    // through the base64 bundle, the same guarantee as a library backup.
+    #[test]
+    fn paper_file_roundtrip_preserves_references() {
+        use base64::Engine;
+        let mut paper = Paper {
+            id: "p1".into(),
+            title: "T".into(),
+            authors: None,
+            year: None,
+            color: "#fff".into(),
+            file_name: "p1.pdf".into(),
+            added_at: "2024-01-01T00:00:00.000Z".into(),
+            last_opened_at: None,
+            read_at: None,
+            reading_progress: None,
+            pinned_at: None,
+            home_order: None,
+            kind: None,
+            reading_order: None,
+            source_key: None,
+            content_hash: Some("abc".into()),
+            index: None,
+            references: Some(vec![Reference {
+                title: "Attention Is All You Need".into(),
+                authors: "Vaswani et al.".into(),
+                year: "2017".into(),
+                arxiv_id: "1706.03762".into(),
+            }]),
+            highlights: vec![],
+            notes: Some("note".into()),
+            chat: vec![],
+            sessions: vec![],
+        };
+        let bytes = b"%PDF-1.4 fake";
+        let bundle = PaperFile {
+            version: 1,
+            paper: paper.clone(),
+            file_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+        };
+        let json = serde_json::to_string(&bundle).unwrap();
+        let back: PaperFile = serde_json::from_str(&json).unwrap();
+
+        // File bytes survive the base64 hop.
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(back.file_base64.as_bytes())
+            .unwrap();
+        assert_eq!(decoded, bytes);
+
+        // References survive serde — the whole point of "preserve annotations".
+        let refs = back.paper.references.as_ref().unwrap();
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].arxiv_id, "1706.03762");
+        assert_eq!(back.paper.notes.as_deref(), Some("note"));
+
+        // Import resets identity but leaves references untouched.
+        paper.id = "p2".into();
+        assert_eq!(paper.references.as_ref().unwrap()[0].title, "Attention Is All You Need");
     }
 }

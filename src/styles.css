@@ -409,6 +409,48 @@ button {
   display: flex;
   flex-direction: column;
 }
+
+/* Pop-out Notes + AI window: the docked panels fill it instead of floating. */
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.workspace-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.workspace-tabs button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.workspace-tabs button.current {
+  background: var(--accent);
+  color: var(--paper);
+  border-color: var(--accent);
+}
+.workspace-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.workspace-body .annot-panel,
+.workspace-body .refs-panel,
+.workspace-body .chat {
+  position: static;
+  width: 100%;
+  height: 100%;
+  border-left: none;
+  box-shadow: none;
+}
 .annot-head {
   display: flex;
   align-items: center;
@@ -469,6 +511,58 @@ button {
   padding: 1px 3px;
   border-radius: 3px;
   user-select: text;
+}
+.toc-text {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  align-self: center;
+}
+.annot-quote.editing {
+  cursor: default;
+}
+/* Preceding text · highlighted run · following text, inline and in place. */
+.annot-editor {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  position: relative;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.annot-ch.sel {
+  background: #eccb60;
+  color: var(--ink);
+}
+/* Overlay grab bar at each end of the highlighted run; drag to extend or trim.
+   Absolutely positioned so moving it never reflows the body text. */
+.annot-handle {
+  position: absolute;
+  width: 6px;
+  margin-left: -3px;
+  background: var(--accent);
+  border-radius: 3px;
+  cursor: ew-resize;
+  touch-action: none;
+  box-shadow: 0 0 0 2px var(--panel);
+  z-index: 1;
+}
+.annot-done {
+  flex-shrink: 0;
+  align-self: flex-start;
+  background: var(--accent);
+  color: var(--paper);
+  border: none;
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
 }
 .annot-meta {
   display: flex;

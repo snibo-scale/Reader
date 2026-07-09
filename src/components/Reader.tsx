@@ -1,26 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Highlight, Paper, ReadingList, Rect } from "../types";
-import { analyzePaper, extractReferences, readPaperText } from "../lib/api";
-import { extractTailText, type Heading } from "../lib/pdf";
-import { getPdfDoc, getPdfHeadings, getPdfText } from "../lib/pdfCache";
+import { readPaperText } from "../lib/api";
+import { getPdfDoc } from "../lib/pdfCache";
 import MarkdownDoc from "./MarkdownDoc";
 import { removeHighlight as withoutHighlight, setHighlightNote, uid } from "../lib/util";
 import { DEFAULT_TINT_COLOR, resolveTint, type TintColor, type TintMode } from "../lib/tints";
 import TintPicker from "./TintPicker";
-import { parseAnalysis, parseReferences } from "../lib/metadata";
-import { applyAnalysis } from "../lib/indexer";
-import { getModel, getProvider } from "../lib/settings";
 import PdfPage from "./PdfPage";
-import ChatPanel from "./ChatPanel";
 import RelatedCard from "./RelatedCard";
-import ReferencesPanel from "./ReferencesPanel";
-import SummaryPanel from "./SummaryPanel";
 import Presentation, { paperSlides } from "./Presentation";
 import NoteEditor from "./NoteEditor";
-import AnnotationsPanel from "./AnnotationsPanel";
-import TocPanel from "./TocPanel";
 import ReadingListMenu from "./ReadingListMenu";
+import { openWorkspaceWindow } from "../lib/window";
+import { listen } from "@tauri-apps/api/event";
 
 const HL_COLOR = "#eccb60"; // Flexoki yellow-200
 const NO_HIGHLIGHTS: Highlight[] = [];
@@ -32,7 +25,6 @@ interface Props {
   onBack: () => void;
   onChange: (p: Paper) => void;
   onOpenPaper: (id: string) => void;
-  onImported: (p: Paper) => void;
   onShare: (p: Paper) => void;
   lists: ReadingList[];
   onChangeLists: (next: ReadingList[]) => void;
@@ -97,19 +89,14 @@ function selectionTextFromGeometry(range: Range, layer: HTMLElement): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
-export default function Reader({ paper, papers, indexing, onBack, onChange, onOpenPaper, onImported, onShare, lists, onChangeLists }: Props) {
+export default function Reader({ paper, papers, indexing, onBack, onChange, onOpenPaper, onShare, lists, onChangeLists }: Props) {
   const isMd = paper.kind === "markdown";
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [mdText, setMdText] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [base, setBase] = useState({ w: 612, h: 792 });
   const [scale, setScale] = useState(1.4);
-  const [paperText, setPaperText] = useState("");
   const [selection, setSelection] = useState<SelectionState | null>(null);
-  const [rightPanel, setRightPanel] = useState<"none" | "chat" | "refs" | "notes" | "summary" | "toc">("none");
-  const [headings, setHeadings] = useState<Heading[] | null>(null);
-  const [summaryBusy, setSummaryBusy] = useState(false);
-  const [askContext, setAskContext] = useState("");
   const [tintMode, setTintMode] = useState<TintMode>(
     () => (localStorage.getItem("reader.tintMode") as TintMode) ?? "white"
   );
@@ -120,7 +107,6 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
       return DEFAULT_TINT_COLOR;
     }
   });
-  const [refsBusy, setRefsBusy] = useState(false);
   const [presenting, setPresenting] = useState(false);
   const [activeNote, setActiveNote] = useState<{ id: string; top: number; left: number } | null>(null);
   const [listMenuOpen, setListMenuOpen] = useState(false);
@@ -195,45 +181,6 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     [paper, onChange]
   );
 
-  // Manual (re-)extraction, e.g. the panel's ↻ button or when a paper was
-  // indexed before references existed and auto-extraction hasn't run.
-  const reExtractRefs = useCallback(async () => {
-    if (!doc) return;
-    setRefsBusy(true);
-    try {
-      const tail = await extractTailText(doc);
-      onChange({ ...paper, references: parseReferences(await extractReferences(tail, getProvider(), getModel())) });
-    } catch {
-      /* keep prior references */
-    } finally {
-      setRefsBusy(false);
-    }
-  }, [doc, paper, onChange]);
-
-  const togglePanel = useCallback((p: "chat" | "refs" | "notes" | "summary" | "toc") => {
-    setRightPanel((cur) => (cur === p ? "none" : p));
-  }, []);
-
-  // Re-run analysis on demand (e.g. after editing the indexing prompt in Settings).
-  // Indexing also runs automatically in the background on open, so this is the
-  // manual path; the generated summary lands on paper.index.summary.
-  const regenerateSummary = useCallback(async () => {
-    if (!paperText.trim() || summaryBusy) return;
-    setSummaryBusy(true);
-    try {
-      const a = parseAnalysis(await analyzePaper(paperText, getProvider(), getModel()));
-      if (a) onChange(applyAnalysis(paper, a));
-    } catch {
-      /* keep the existing summary */
-    } finally {
-      setSummaryBusy(false);
-    }
-  }, [paperText, summaryBusy, paper, onChange]);
-  const jumpToPage = useCallback((page: number) => {
-    containerRef.current
-      ?.querySelector(`.pdf-page[data-page="${page}"]`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
   // Scroll to a point within a page (yFrac 0..1 from its top) — for TOC jumps.
   const jumpTo = useCallback((page: number, yFrac: number) => {
     const scroll = containerRef.current;
@@ -243,6 +190,16 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
       el.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop + yFrac * el.offsetHeight - 12;
     scroll.scrollTo({ top, behavior: "smooth" });
   }, []);
+
+  // A popped-out Contents/Annotations window scrolls the PDF here via a broadcast.
+  useEffect(() => {
+    const un = listen<{ paperId: string; page: number; yFrac: number }>("workspace-jump", (e) => {
+      if (e.payload.paperId === paper.id) jumpTo(e.payload.page, e.payload.yFrac);
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  }, [paper.id, jumpTo]);
 
   const tint = useMemo(() => resolveTint(tintMode, tintColor), [tintMode, tintColor]);
   const hlByPage = useMemo(() => {
@@ -262,7 +219,6 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
         const t = await readPaperText(paper.id);
         if (cancelled) return;
         setMdText(t);
-        setPaperText(t);
         return;
       }
       const d = await getPdfDoc(paper.id);
@@ -273,12 +229,6 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
         if (cancelled) return;
         const v = p.getViewport({ scale: 1 });
         setBase({ w: v.width, h: v.height });
-      });
-      getPdfText(paper.id, d).then((t) => {
-        if (!cancelled) setPaperText(t);
-      });
-      getPdfHeadings(paper.id, d).then((h) => {
-        if (!cancelled) setHeadings(h);
       });
     })();
     return () => {
@@ -387,13 +337,6 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
     setSelection(null);
   }, [selection, paper, onChange]);
 
-  const askAboutSelection = useCallback(() => {
-    if (!selection) return;
-    setAskContext(selection.text);
-    setRightPanel("chat");
-    window.getSelection()?.removeAllRanges();
-    setSelection(null);
-  }, [selection]);
 
   const removeHighlight = useCallback(
     (id: string) => onChange(withoutHighlight(paper, id)),
@@ -407,8 +350,8 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
 
   return (
     <div className="reader">
-      <header className="reader-header">
-        <div className="crumbs">
+      <header className="reader-header" data-tauri-drag-region>
+        <div className="crumbs" data-tauri-drag-region>
           <button className="link" onClick={onBack}>
             My Library
           </button>
@@ -492,39 +435,11 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
           </div>
           <span className="bar-divider" />
           <button
-            className={"toggle" + (rightPanel === "toc" ? " current" : "")}
-            onClick={() => togglePanel("toc")}
-            title="Contents"
+            className="toggle"
+            onClick={() => openWorkspaceWindow(paper.id, paper.title)}
+            title="Notes, AI, summary, contents & references"
           >
-            ☰
-          </button>
-          <button
-            className={"toggle" + (rightPanel === "notes" ? " current" : "")}
-            onClick={() => togglePanel("notes")}
-            title="Notes &amp; annotations"
-          >
-            ✎
-          </button>
-          <button
-            className={"toggle" + (rightPanel === "summary" ? " current" : "")}
-            onClick={() => togglePanel("summary")}
-            title="Paper summary"
-          >
-            ❝
-          </button>
-          <button
-            className={"toggle" + (rightPanel === "refs" ? " current" : "")}
-            onClick={() => togglePanel("refs")}
-            title="References"
-          >
-            ⬇
-          </button>
-          <button
-            className={"toggle" + (rightPanel === "chat" ? " current" : "")}
-            onClick={() => togglePanel("chat")}
-            title="Ask AI"
-          >
-            ✦
+            ⤢ Panels
           </button>
         </div>
       </header>
@@ -568,49 +483,6 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
             <div className="loading">Loading PDF…</div>
           )}
         </div>
-
-        {rightPanel === "refs" && (
-          <ReferencesPanel
-            refs={paper.references ?? null}
-            papers={papers}
-            busy={indexing || refsBusy}
-            onReload={reExtractRefs}
-            onClose={() => setRightPanel("none")}
-            onImported={onImported}
-          />
-        )}
-
-        {rightPanel === "summary" && (
-          <SummaryPanel
-            paper={paper}
-            busy={summaryBusy || indexing}
-            onRegenerate={regenerateSummary}
-            onClose={() => setRightPanel("none")}
-          />
-        )}
-
-        {rightPanel === "toc" && (
-          <TocPanel headings={headings} onJump={jumpTo} onClose={() => setRightPanel("none")} />
-        )}
-
-        {rightPanel === "notes" && (
-          <AnnotationsPanel
-            paper={paper}
-            onChange={onChange}
-            onClose={() => setRightPanel("none")}
-            onJump={jumpToPage}
-          />
-        )}
-
-        {rightPanel === "chat" && (
-          <ChatPanel
-            paper={paper}
-            paperText={paperText}
-            seedContext={askContext}
-            onConsumeSeed={() => setAskContext("")}
-            onChange={onChange}
-          />
-        )}
       </div>
 
       {presenting && (
@@ -658,7 +530,6 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onOp
           <button onClick={addHighlight} disabled={!selection.pending}>
             ◍ Highlight
           </button>
-          <button onClick={askAboutSelection}>✦ Ask AI</button>
         </div>
       )}
     </div>

@@ -321,7 +321,6 @@ export default function App() {
         onBack={() => setActiveId(null)}
         onChange={handleUpdate}
         onOpenPaper={openPaper}
-        onImported={handleImported}
         onShare={handleShare}
         lists={lists}
         onChangeLists={commitLists}
