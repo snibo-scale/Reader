@@ -3,12 +3,33 @@ name: Release
 on:
   push:
     branches: ["main"]
+  workflow_dispatch: {} # allow a manual release from the Actions tab
 
 permissions:
   contents: write
 
 jobs:
+  # Only build a release when the version actually changed, so ordinary commits
+  # to main (docs, CI tweaks, refactors) don't rebuild all four platforms.
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      bumped: ${{ steps.check.outputs.bumped }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # need the parent commit to diff the version
+      - id: check
+        name: Detect version bump
+        run: |
+          cur=$(grep '"version"' package.json | head -1 | sed -E 's/.*"version": *"([^"]+)".*/\1/')
+          prev=$(git show HEAD^:package.json 2>/dev/null | grep '"version"' | head -1 | sed -E 's/.*"version": *"([^"]+)".*/\1/')
+          echo "current=$cur previous=$prev"
+          if [ "$cur" != "$prev" ]; then echo "bumped=true" >> "$GITHUB_OUTPUT"; else echo "bumped=false" >> "$GITHUB_OUTPUT"; fi
+
   release:
+    needs: check-version
+    if: needs.check-version.outputs.bumped == 'true' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +61,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      # Cache the Rust build per matrix target (the two macOS jobs build
+      # different targets, so key them apart to avoid clobbering each other).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.platform }}-${{ matrix.args }}
 
       - name: Install dependencies
         run: npm ci
