@@ -1,5 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
+import { check } from "@tauri-apps/plugin-updater";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { Paper, ReadingList } from "./types";
 import {
   deletePaper,
@@ -45,6 +48,7 @@ export default function App() {
   const [importNote, setImportNote] = useState<string | null>(null);
   const [indexProgress, setIndexProgress] = useState<{ done: number; total: number } | null>(null);
   const [indexingIds, setIndexingIds] = useState<Set<string>>(new Set());
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const importedOnce = useRef(false);
   const indexingRef = useRef<Set<string>>(new Set());
   const pendingWindowPaper = useRef<string | null>(
@@ -58,6 +62,13 @@ export default function App() {
   useEffect(() => {
     papersRef.current = papers;
   }, [papers]);
+
+  // Check GitHub for a newer release once, on boot. Failures (offline etc.) are ignored.
+  useEffect(() => {
+    check()
+      .then((u) => u && setUpdateVersion(u.version))
+      .catch(() => {});
+  }, []);
 
   const refresh = useCallback(async () => {
     const [ps, ls] = await Promise.all([listPapers(), listReadingLists()]);
@@ -117,6 +128,18 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Live-refresh when the Panels window (or another window) saves a paper, so
+  // notes/highlights edited there show up in the reader without a reopen.
+  useEffect(() => {
+    const un = listen<{ paper: Paper; source: string }>("paper-updated", (e) => {
+      if (e.payload.source === getCurrentWebviewWindow().label) return;
+      setPapers((list) => list.map((p) => (p.id === e.payload.paper.id ? e.payload.paper : p)));
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
 
   // Then, in the background, pull in anything from the un.ms Research app
   // (idempotent / de-duped) and re-list only if it actually added something.
@@ -395,6 +418,7 @@ export default function App() {
       <SettingsView
         papers={papers}
         importing={importing}
+        updateAvailable={updateVersion}
         onExport={handleExport}
         onImportBackup={handleImportBackup}
       />
@@ -428,6 +452,7 @@ export default function App() {
         view={view}
         inReader={!!active}
         collapsed={!navOpen}
+        updateAvailable={updateVersion}
         onToggle={() => setNavOpen((o) => !o)}
         onNavigate={navigate}
       />

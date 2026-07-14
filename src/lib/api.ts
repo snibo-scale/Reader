@@ -1,4 +1,6 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { Paper, Provider, ReadingList } from "../types";
 import { getIndexPrompt, getRefsPrompt } from "./settings";
 
@@ -7,7 +9,12 @@ export const listPapers = () => invoke<Paper[]>("list_papers");
 export const getPaper = (id: string) => invoke<Paper | null>("get_paper", { id });
 export const importPaper = (path: string) => invoke<Paper>("import_paper", { path });
 export const deletePaper = (id: string) => invoke<void>("delete_paper", { id });
-export const updatePaper = (paper: Paper) => invoke<void>("update_paper", { paper });
+export const updatePaper = async (paper: Paper) => {
+  await invoke<void>("update_paper", { paper });
+  // Broadcast so other open windows (e.g. the Panels/Notes window) live-refresh
+  // their copy instead of only reloading on open. Listeners skip their own `source`.
+  void emit("paper-updated", { paper, source: getCurrentWebviewWindow().label });
+};
 /** Persist only the scroll fraction — used by the reader's periodic progress save. */
 export const setReadingProgress = (id: string, progress: number) =>
   invoke<void>("set_reading_progress", { id, progress });

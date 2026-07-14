@@ -13,27 +13,29 @@ interface Props {
   onReload: () => void;
   onClose: () => void;
   onImported: (p: Paper) => void;
+  onOpen: (id: string) => void;
 }
 
 const normTitle = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
-export default function ReferencesPanel({ refs, papers, busy, onReload, onClose, onImported }: Props) {
+export default function ReferencesPanel({ refs, papers, busy, onReload, onClose, onImported, onOpen }: Props) {
   const [status, setStatus] = useState<Record<number, RowState>>({});
 
-  // Which references are already in the library (by arXiv id or normalized title).
+  // Map each reference key to the library paper, so an in-library ref is clickable.
   const { keys, titles } = useMemo(() => {
-    const keys = new Set<string>();
-    const titles = new Set<string>();
+    const keys = new Map<string, Paper>();
+    const titles = new Map<string, Paper>();
     for (const p of papers) {
-      if (p.sourceKey) keys.add(baseArxivId(p.sourceKey));
+      if (p.sourceKey) keys.set(baseArxivId(p.sourceKey), p);
       const t = normTitle(p.title);
-      if (t.length > 3) titles.add(t);
+      if (t.length > 3) titles.set(t, p);
     }
     return { keys, titles };
   }, [papers]);
 
-  const inLibrary = (r: Reference) =>
-    (!!r.arxivId && keys.has(baseArxivId(r.arxivId))) || (normTitle(r.title).length > 3 && titles.has(normTitle(r.title)));
+  const inLibrary = (r: Reference): Paper | undefined =>
+    (r.arxivId ? keys.get(baseArxivId(r.arxivId)) : undefined) ??
+    (normTitle(r.title).length > 3 ? titles.get(normTitle(r.title)) : undefined);
 
   const add = async (i: number, r: Reference) => {
     setStatus((s) => ({ ...s, [i]: "adding" }));
@@ -59,7 +61,7 @@ export default function ReferencesPanel({ refs, papers, busy, onReload, onClose,
   const label = (st: RowState) =>
     st === "adding" ? "Adding…" : st === "notfound" ? "Not found" : st === "error" ? "Retry" : "Add";
 
-  const haveCount = refs ? refs.filter(inLibrary).length : 0;
+  const haveCount = refs ? refs.filter((r) => inLibrary(r)).length : 0;
 
   return (
     <div className="refs-panel">
@@ -104,8 +106,10 @@ export default function ReferencesPanel({ refs, papers, busy, onReload, onClose,
                     {[r.authors, r.year, r.arxivId && `arXiv:${r.arxivId}`].filter(Boolean).join(" · ")}
                   </div>
                 </div>
-                {st === "exists" ? (
-                  <span className="ref-badge">✓ In library</span>
+                {st === "exists" && have ? (
+                  <button className="ref-badge ref-open" onClick={() => onOpen(have.id)} title="Open in library">
+                    ✓ In library ›
+                  </button>
                 ) : st === "added" ? (
                   <span className="ref-badge">✓ Added</span>
                 ) : (

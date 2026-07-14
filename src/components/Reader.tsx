@@ -117,6 +117,16 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onPr
   const moreWrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // In-text search. Uses the native window.find() for stepping/highlighting
+  // (it selects + scrolls the match into view for free); a per-page text index
+  // only supplies the match count and which page to bring on-screen first, since
+  // PDF pages are virtualized and window.find() can't reach an unmounted page.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [matchIdx, setMatchIdx] = useState(0);
+  const [pageTexts, setPageTexts] = useState<string[] | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   // Reading progress: track the scroll fraction in refs (no re-render per scroll
   // tick), persist it every few seconds and on exit, restore it on open.
   const progressRef = useRef(paper.readingProgress ?? 0);
@@ -202,6 +212,145 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onPr
       un.then((f) => f());
     };
   }, [paper.id, jumpTo]);
+
+  // Trackpad pinch-zoom: browsers (incl. WKWebView) report a pinch as a wheel
+  // event with ctrlKey set. Scale continuously and clamp to the button range.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setScale((s) => Math.min(3, Math.max(0.6, +(s * Math.exp(-e.deltaY * 0.01)).toFixed(2))));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Reset the search index when the paper changes.
+  useEffect(() => {
+    setPageTexts(null);
+  }, [paper.id]);
+
+  // Build the per-page text index once, when search first opens on a PDF. Spans
+  // join with no separators (see PdfPage), so join("") mirrors what window.find sees.
+  useEffect(() => {
+    if (isMd || !searchOpen || !doc || pageTexts) return;
+    let cancelled = false;
+    (async () => {
+      const out: string[] = [];
+      for (let p = 1; p <= doc.numPages; p++) {
+        const c = await doc.getPage(p).then((pg) => pg.getTextContent());
+        if (cancelled) return;
+        out.push(c.items.map((i) => ("str" in i ? i.str : "")).join(""));
+      }
+      if (!cancelled) setPageTexts(out);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isMd, searchOpen, doc, pageTexts]);
+
+  // Ordered match list: {page, occ} where page 0 means the markdown doc, and occ
+  // is the occurrence index within that page. Count is case-insensitive.
+  const matches = useMemo(() => {
+    const q = query.toLowerCase();
+    if (!q) return [] as { page: number; occ: number }[];
+    const out: { page: number; occ: number }[] = [];
+    const scan = (text: string, page: number) => {
+      const t = text.toLowerCase();
+      let i = 0,
+        occ = 0;
+      while ((i = t.indexOf(q, i)) >= 0) {
+        out.push({ page, occ: occ++ });
+        i += q.length;
+      }
+    };
+    if (isMd) scan(mdText ?? "", 0);
+    else (pageTexts ?? []).forEach((t, idx) => scan(t, idx + 1));
+    return out;
+  }, [query, isMd, mdText, pageTexts]);
+
+  // Wait for a PDF page's text-layer spans to mount after scrolling it into view.
+  const waitForSpans = useCallback((page: number) => {
+    return new Promise<HTMLElement | null>((res) => {
+      let tries = 0;
+      const tick = () => {
+        const layer = containerRef.current?.querySelector<HTMLElement>(
+          `.pdf-page[data-page="${page}"] .text-layer`
+        );
+        if (layer?.querySelector("span")) return res(layer);
+        if (tries++ > 120) return res(layer ?? null); // ~2s
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
+  }, []);
+
+  const goToMatch = useCallback(
+    async (m: { page: number; occ: number } | undefined) => {
+      if (!m) return;
+      let root: HTMLElement | null;
+      if (m.page === 0) {
+        root = containerRef.current?.querySelector<HTMLElement>(".md-doc") ?? null;
+      } else {
+        jumpTo(m.page, 0); // mount the page's text layer
+        root = await waitForSpans(m.page);
+      }
+      const sel = window.getSelection();
+      if (!root || !sel) return;
+      // Collapse the caret at the page/doc start, then step window.find() forward
+      // occ+1 times to land on the wanted occurrence within this root.
+      sel.removeAllRanges();
+      const r = document.createRange();
+      r.setStart(root, 0);
+      r.collapse(true);
+      sel.addRange(r);
+      const find = (window as unknown as { find: (...a: unknown[]) => boolean }).find;
+      for (let i = 0; i <= m.occ; i++) find(query, false, false, true);
+    },
+    [jumpTo, waitForSpans, query]
+  );
+
+  // New query → reset. We navigate only on Enter / prev-next (calling window.find
+  // live on each keystroke steals focus from the input, so don't).
+  const navigatedRef = useRef(false);
+  useEffect(() => {
+    navigatedRef.current = false;
+    setMatchIdx(0);
+  }, [query]);
+
+  // Cmd/Ctrl+F opens search; Escape closes it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        setSearchOpen(true);
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      } else if (e.key === "Escape" && searchOpen) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [searchOpen]);
+
+  const step = useCallback(
+    (delta: number) => {
+      if (!matches.length) return;
+      // First step of a new query lands on the first (or last) match, not the second.
+      const next = !navigatedRef.current
+        ? delta < 0
+          ? matches.length - 1
+          : 0
+        : (matchIdx + delta + matches.length) % matches.length;
+      navigatedRef.current = true;
+      setMatchIdx(next);
+      void goToMatch(matches[next]);
+    },
+    [matches, matchIdx, goToMatch]
+  );
 
   const tint = useMemo(() => resolveTint(tintMode, tintColor), [tintMode, tintColor]);
   const hlByPage = useMemo(() => {
@@ -370,6 +519,14 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onPr
               setTintColor(c);
             }}
           />
+          <button
+            className={"toggle" + (searchOpen ? " current" : "")}
+            onClick={() => setSearchOpen((o) => !o)}
+            title="Search in text (⌘F)"
+          >
+            ⌕
+          </button>
+          <span className="bar-divider" />
           <button onClick={() => setScale((s) => Math.max(0.6, +(s - 0.15).toFixed(2)))}>−</button>
           <span className="zoom">{Math.round(scale * 100)}%</span>
           <button onClick={() => setScale((s) => Math.min(3, +(s + 0.15).toFixed(2)))}>+</button>
@@ -445,6 +602,36 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onPr
           </button>
         </div>
       </header>
+
+      {searchOpen && (
+        <div className="reader-search">
+          <input
+            ref={searchInputRef}
+            autoFocus
+            placeholder="Search in text…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                step(e.shiftKey ? -1 : 1);
+              }
+            }}
+          />
+          <span className="reader-search-count">
+            {!isMd && !pageTexts ? "…" : matches.length ? `${matchIdx + 1}/${matches.length}` : query ? "0" : ""}
+          </span>
+          <button onClick={() => step(-1)} disabled={!matches.length} title="Previous (⇧⏎)">
+            ‹
+          </button>
+          <button onClick={() => step(1)} disabled={!matches.length} title="Next (⏎)">
+            ›
+          </button>
+          <button onClick={() => setSearchOpen(false)} title="Close (Esc)">
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="reader-body">
         <RelatedCard paper={paper} papers={papers} onOpen={onOpenPaper} />

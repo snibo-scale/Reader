@@ -15,11 +15,12 @@ import {
 interface Props {
   papers: Paper[];
   importing: boolean;
+  updateAvailable?: string | null;
   onExport: () => void;
   onImportBackup: () => void;
 }
 
-export default function SettingsView({ papers, importing, onExport, onImportBackup }: Props) {
+export default function SettingsView({ papers, importing, updateAvailable, onExport, onImportBackup }: Props) {
   const [s, setS] = useState<Settings>(getSettings());
   const update = (patch: Partial<Settings>) => {
     const next = { ...s, ...patch };
@@ -210,7 +211,7 @@ export default function SettingsView({ papers, importing, onExport, onImportBack
         <div className="set-row">
           <label>App updates</label>
           <button className="set-reset" onClick={checkUpdate} disabled={checking}>
-            {checking ? "Working…" : "Check for updates"}
+            {checking ? "Working…" : updateAvailable ? `Update to v${updateAvailable}` : "Check for updates"}
           </button>
         </div>
         {upd && <p className="set-hint">{upd}</p>}

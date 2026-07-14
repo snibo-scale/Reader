@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { openPaperWindow } from "../lib/window";
 import type { Paper } from "../types";
 import { analyzePaper, extractReferences, getPaper, listPapers, readPaperText, updatePaper } from "../lib/api";
 import { extractTailText, type Heading } from "../lib/pdf";
@@ -46,6 +47,19 @@ export default function Workspace({ id }: { id: string }) {
     });
     return () => {
       cancelled = true;
+    };
+  }, [id]);
+
+  // Live-refresh when the reader (or another window) saves this paper, so newly
+  // added highlights/notes auto-populate here instead of waiting for a reopen.
+  useEffect(() => {
+    const un = listen<{ paper: Paper; source: string }>("paper-updated", (e) => {
+      if (e.payload.paper.id !== id || e.payload.source === getCurrentWebviewWindow().label) return;
+      setPaper(e.payload.paper);
+      setPapers((list) => list.map((x) => (x.id === id ? e.payload.paper : x)));
+    });
+    return () => {
+      un.then((f) => f());
     };
   }, [id]);
 
@@ -153,6 +167,7 @@ export default function Workspace({ id }: { id: string }) {
             onReload={reExtractRefs}
             onClose={close}
             onImported={(p) => setPapers((list) => (list.some((x) => x.id === p.id) ? list : [p, ...list]))}
+            onOpen={(pid) => openPaperWindow(pid, papers.find((p) => p.id === pid)?.title ?? "")}
           />
         )}
       </div>

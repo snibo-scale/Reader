@@ -6,11 +6,12 @@ interface Props {
   view: View;
   inReader: boolean;
   collapsed: boolean;
+  updateAvailable?: string | null;
   onToggle: () => void;
   onNavigate: (v: View) => void;
 }
 
-export default function Sidebar({ view, inReader, collapsed, onToggle, onNavigate }: Props) {
+export default function Sidebar({ view, inReader, collapsed, updateAvailable, onToggle, onNavigate }: Props) {
   const inLibrary = !inReader && view === "library";
 
   if (collapsed) {
@@ -55,7 +56,17 @@ export default function Sidebar({ view, inReader, collapsed, onToggle, onNavigat
         </nav>
       </div>
 
-      <div className="sidebar-footer">{item("settings", "⚙ Settings", !inReader && view === "settings")}</div>
+      <div className="sidebar-footer">
+        <button
+          className={"nav-item" + (!inReader && view === "settings" ? " current" : "")}
+          onClick={() => onNavigate("settings")}
+        >
+          ⚙ Settings
+          {updateAvailable && (
+            <span className="nav-badge" title={`Version ${updateAvailable} available`}>●</span>
+          )}
+        </button>
+      </div>
     </aside>
   );
 }
