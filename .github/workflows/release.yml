@@ -84,3 +84,22 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  # After the new version is published, delete release binaries for older majors
+  # to free storage (git tags stay, so those versions build from source).
+  prune-old-majors:
+    needs: [check-version, release]
+    if: needs.check-version.outputs.bumped == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main # commit the README note back to the branch
+          fetch-depth: 0 # need all tags to list older majors
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Prune old-major releases + refresh README note
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/prune-old-majors.sh

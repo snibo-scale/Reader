@@ -59,6 +59,15 @@ xattr -cr /Applications/Reader.app
 
 Then open it normally. (Alternatively: right-click the app → **Open** → **Open**.)
 
+<!-- OLD-VERSIONS:START -->
+## Older versions
+
+Older major versions are no longer published as prebuilt binaries (to keep release storage small). Build one from source by checking out the last tag of that major:
+
+- `git checkout v2.9.0 && npm ci && npm run tauri build` — latest v2.x
+- `git checkout v3.0.0 && npm ci && npm run tauri build` — latest v3.x
+<!-- OLD-VERSIONS:END -->
+
 ## How it works
 
 | Layer | File | Responsibility |
