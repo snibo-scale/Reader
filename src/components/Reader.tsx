@@ -666,6 +666,7 @@ export default function Reader({ paper, papers, indexing, onBack, onChange, onPr
                 estimateW={base.w}
                 estimateH={base.h}
                 scrollRef={containerRef}
+                onJump={jumpTo}
               />
             ))
           ) : (

@@ -44,6 +44,21 @@ npm run tauri build
 
 Tests: `npm test` (frontend) and `cargo test` in `src-tauri/` (backend).
 
+## Installing a release build (macOS)
+
+The app isn't code-signed with an Apple Developer certificate, so macOS
+Gatekeeper blocks it on first launch with *"Apple could not guarantee this
+software is free of malware."* This is expected for unsigned apps downloaded
+from the internet — not a sign anything is wrong.
+
+After copying `Reader.app` to `/Applications`, clear the quarantine flag:
+
+```bash
+xattr -cr /Applications/Reader.app
+```
+
+Then open it normally. (Alternatively: right-click the app → **Open** → **Open**.)
+
 ## How it works
 
 | Layer | File | Responsibility |

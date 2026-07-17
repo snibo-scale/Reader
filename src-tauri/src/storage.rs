@@ -243,6 +243,17 @@ impl Library {
 
         lib.lists = lists;
 
+        // Drop reading-list entries whose paper no longer exists (failed imports,
+        // external removals). A dangling id renders as no row yet still counts,
+        // leaving a phantom slot that breaks reordering.
+        let live: std::collections::HashSet<&str> = lib.papers.iter().map(|p| p.id.as_str()).collect();
+        let mut pruned_lists = false;
+        for list in lib.lists.iter_mut() {
+            let before = list.paper_ids.len();
+            list.paper_ids.retain(|pid| live.contains(pid.as_str()));
+            pruned_lists |= list.paper_ids.len() != before;
+        }
+
         // Backfill content hashes for papers imported before hashing existed, so
         // duplicate detection works against the whole library.
         let papers_dir = lib.papers_dir();
@@ -259,7 +270,7 @@ impl Library {
         if had_legacy || backfilled {
             lib.save();
         }
-        if had_legacy {
+        if had_legacy || pruned_lists {
             lib.save_lists();
         }
         lib
