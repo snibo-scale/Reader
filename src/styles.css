@@ -2699,103 +2699,6 @@ button.ref-open:hover {
   margin: 18px 0 22px;
 }
 
-/* ---------------- Kanban board ---------------- */
-.board {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 22px 30px 0;
-}
-.board .lib-header {
-  margin-bottom: 16px;
-}
-.kanban {
-  flex: 1;
-  display: flex;
-  gap: 18px;
-  overflow-x: auto;
-  padding-bottom: 24px;
-  align-items: flex-start;
-}
-.kanban-col {
-  flex: 0 0 320px;
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--base-100);
-  border: 1px solid transparent;
-  border-radius: 14px;
-  padding: 10px 10px 4px;
-  transition: border-color 0.12s ease, background 0.12s ease;
-}
-.kanban-col.drag-over {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 7%, var(--base-100));
-}
-.kanban-head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 8px 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.kanban-dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.kanban-count {
-  color: var(--muted);
-  font-weight: 400;
-}
-.kanban-cards {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 2px;
-}
-.kanban-card {
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 12px;
-  padding: 14px 15px;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: box-shadow 0.12s ease, transform 0.08s ease;
-}
-.kanban-card:hover {
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-}
-.kanban-card:active {
-  cursor: grabbing;
-}
-.kanban-card-title {
-  font-family: var(--serif);
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.25;
-}
-.kanban-card-author {
-  color: var(--muted);
-  font-size: 13px;
-  margin-top: 6px;
-}
-.kanban-card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 12px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
 /* ---------------- Scrollbars (WebKit-only app) ---------------- */
 ::-webkit-scrollbar {
   width: 10px;
@@ -2817,4 +2720,41 @@ button.ref-open:hover {
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Segmented sort control: click a segment to sort, click it again to reverse. */
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+}
+.sort-label {
+  color: var(--muted);
+  margin-right: 6px;
+}
+.sort-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-radius: 20px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sort-btn:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+.sort-btn.on {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 5px 9px;
+}
+.sort-arrow {
+  font-size: 11px;
+  opacity: 0.7;
 }

@@ -187,6 +187,8 @@ export default function Library({
   onChangeLists,
 }: Props) {
   const [urlOpen, setUrlOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<"added" | "year" | "title">("added");
+  const [asc, setAsc] = useState(false);
   const [url, setUrl] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -196,6 +198,7 @@ export default function Library({
   // (left-to-right, then top-to-bottom) while still packing each column with no
   // vertical gaps — CSS multi-column would pack column-major and break the order.
   const COL_W = 230;
+  const HOME_MAX = 12; // ponytail: fixed cap, make it a setting if anyone asks
   const GAP = 20;
   const gridRef = useRef<HTMLDivElement>(null);
   const [numCols, setNumCols] = useState(1);
@@ -213,7 +216,24 @@ export default function Library({
     const opened = p.lastOpenedAt ?? "";
     return opened > added ? opened : added;
   };
-  const sorted = useMemo(() => [...papers].sort((a, b) => recency(b).localeCompare(recency(a))), [papers]);
+  // All Papers is user-sorted; Home always leads with the most recent activity.
+  // Papers with no writing date sort as year 0, i.e. last when descending.
+  const compare = (a: Paper, b: Paper) => {
+    const v =
+      sortKey === "title"
+        ? a.title.localeCompare(b.title)
+        : sortKey === "year"
+          ? (a.year || "0").localeCompare(b.year || "0")
+          : (a.addedAt ?? "").localeCompare(b.addedAt ?? "");
+    return asc ? v : -v;
+  };
+  const sorted = useMemo(
+    () =>
+      mode === "all"
+        ? [...papers].sort(compare)
+        : [...papers].sort((a, b) => recency(b).localeCompare(recency(a))),
+    [papers, mode, sortKey, asc]
+  );
   // "Continue reading" strip: pinned papers first (newest pin first), then the
   // most recently opened unfinished papers to fill it up to 5.
   const continueReading = useMemo(() => {
@@ -236,11 +256,10 @@ export default function Library({
   const shown = useMemo(
     () => {
       if (mode !== "recent") return sorted;
-      // Recent = anything opened or added within the past week (recency order
-      // preserved), minus what the continue-reading strip already shows.
-      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      // Home = the most recently active papers, however long ago that was, minus
+      // what the continue-reading strip already shows.
       const inStrip = new Set(continueReading.map((p) => p.id));
-      return sorted.filter((p) => recency(p) >= weekAgo && !inStrip.has(p.id));
+      return sorted.filter((p) => !inStrip.has(p.id)).slice(0, HOME_MAX);
     },
     [mode, sorted, continueReading]
   );
@@ -315,6 +334,35 @@ export default function Library({
           {mode === "all" ? "All Papers" : "Home"}
         </div>
         <div className="lib-actions">
+          {mode === "all" && (
+            <>
+              <div className="sort-bar" role="group" aria-label="Sort papers">
+                <span className="sort-label">Sort</span>
+                {([
+                  ["added", "Added"],
+                  ["year", "Year"],
+                  ["title", "Title"],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={"sort-btn" + (sortKey === key ? " on" : "")}
+                    title={sortKey === key ? "Reverse order" : `Sort by ${label.toLowerCase()}`}
+                    onClick={() => {
+                      if (sortKey === key) setAsc((a) => !a);
+                      else {
+                        setSortKey(key);
+                        setAsc(key === "title"); // A–Z reads naturally; dates default newest first
+                      }
+                    }}
+                  >
+                    {label}
+                    {sortKey === key && <span className="sort-arrow">{asc ? "↑" : "↓"}</span>}
+                  </button>
+                ))}
+              </div>
+              <span className="bar-divider" />
+            </>
+          )}
           <button className="ghost-btn" onClick={onIndexAll} disabled={indexing || unindexed === 0}>
             {indexing
               ? `Indexing ${indexProgress!.done}/${indexProgress!.total}…`
@@ -438,13 +486,7 @@ export default function Library({
             {importing ? "Importing…" : "+ Add your first PDF"}
           </button>
         </div>
-      ) : shown.length === 0 ? (
-        continueReading.length === 0 && (
-          <div className="empty">
-            <p>Nothing opened or added in the past week — see All Papers.</p>
-          </div>
-        )
-      ) : (
+      ) : shown.length === 0 ? null : (
         <div className="grid" ref={gridRef}>
           {columns.map((col, ci) => (
             <div className="grid-col" key={ci}>

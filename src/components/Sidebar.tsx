@@ -1,6 +1,6 @@
 import Logo from "./Logo";
 
-export type View = "library" | "all" | "board" | "reading" | "search" | "discover" | "timeline" | "highlights" | "settings";
+export type View = "library" | "all" | "reading" | "search" | "discover" | "timeline" | "highlights" | "settings";
 
 interface Props {
   view: View;
@@ -46,9 +46,8 @@ export default function Sidebar({ view, inReader, collapsed, updateAvailable, on
         <nav className="nav-top">
           {item("library", "Home", inLibrary)}
           {item("all", "All Papers", !inReader && view === "all")}
-          {item("board", "Board", !inReader && view === "board")}
           <div className="nav-label">Workspaces</div>
-          {item("reading", "★ Reading Lists", !inReader && view === "reading")}
+          {item("reading", "Reading Lists", !inReader && view === "reading")}
           {item("search", "Search", !inReader && view === "search")}
           {item("discover", "Discover", !inReader && view === "discover")}
           {item("timeline", "Timeline", !inReader && view === "timeline")}
