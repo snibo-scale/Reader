@@ -908,9 +908,10 @@ button.ref-open:hover {
   justify-content: space-between;
   padding-top: 14px;
 }
-.hl-count {
-  font-size: 14px;
+.card-added {
+  font-size: 12px;
   color: var(--base-600);
+  margin-right: auto;
 }
 .card-actions {
   display: flex;

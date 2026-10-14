@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Paper, ReadingList } from "../types";
 import { needsIndexing } from "../lib/indexStatus";
 import { tagTint } from "../lib/colors";
-import { formatAuthors } from "../lib/util";
+import { formatAuthors, relativeDate } from "../lib/util";
 import { openPaperWindow } from "../lib/window";
 import ArxivSearch from "./ArxivSearch";
 import ReadingListMenu from "./ReadingListMenu";
@@ -109,9 +109,11 @@ function PaperCard({ paper, lists, onChangeLists, onOpen, onDelete, onShare, onU
       <div className="card-title">{paper.title}</div>
       <div className="card-author">{formatAuthors(paper.authors)}</div>
       <div className="card-bottom">
-        <span className="hl-count" title="Highlights">
-          ◍ {paper.highlights.length}
-        </span>
+        {paper.addedAt && (
+          <span className="card-added" title={`Added ${new Date(paper.addedAt).toLocaleString()}`}>
+            {relativeDate(paper.addedAt)}
+          </span>
+        )}
         <div className="card-actions">
           <button
             className="card-win"

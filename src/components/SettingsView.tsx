@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { Paper } from "../types";
+import { alphaxivSync } from "../lib/api";
 import {
   getSettings,
   saveSettings,
@@ -30,6 +31,24 @@ export default function SettingsView({ papers, importing, updateAvailable, onExp
 
   const indexed = papers.filter((p) => p.index).length;
   const highlights = papers.reduce((n, p) => n + p.highlights.length, 0);
+
+  const [axv, setAxv] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const syncAlphaxiv = async () => {
+    setSyncing(true);
+    setAxv("Syncing…");
+    try {
+      const r = await alphaxivSync(papers, s.alphaxivKey);
+      const parts = [`${r.synced} papers synced`];
+      if (r.notFound.length) parts.push(`${r.notFound.length} not on alphaXiv`);
+      if (r.skipped) parts.push(`${r.skipped} skipped (no arXiv id)`);
+      setAxv(parts.join(" · "));
+    } catch (e) {
+      setAxv(`Sync failed: ${e}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const [upd, setUpd] = useState("");
   const [checking, setChecking] = useState(false);
@@ -199,6 +218,30 @@ export default function SettingsView({ papers, importing, updateAvailable, onExp
         <p className="set-hint">
           Export saves papers, lists, annotations, summaries, and conversations to a file. Restore redownloads papers
           and recovers everything from a backup.
+        </p>
+      </section>
+
+      <section className="set-group">
+        <h3>alphaXiv</h3>
+        <div className="set-row">
+          <label>API key</label>
+          <input
+            type="password"
+            value={s.alphaxivKey}
+            placeholder="axv1_…"
+            onChange={(e) => update({ alphaxivKey: e.target.value })}
+          />
+        </div>
+        <div className="set-row">
+          <label>Sync library</label>
+          <button className="set-reset" onClick={syncAlphaxiv} disabled={syncing || !s.alphaxivKey.trim()}>
+            {syncing ? "Working…" : "Sync to alphaXiv"}
+          </button>
+        </div>
+        {axv && <p className="set-hint">{axv}</p>}
+        <p className="set-hint">
+          Pushes every arXiv paper into your alphaXiv folders (Want to read / Reading / Completed) so the alphaXiv
+          mobile app mirrors this library. Create a key at alphaxiv.org → Settings → API Keys.
         </p>
       </section>
 

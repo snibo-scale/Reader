@@ -1,4 +1,5 @@
 mod ai;
+mod alphaxiv;
 mod arxiv;
 mod storage;
 
@@ -46,6 +47,7 @@ pub fn run() {
             ai::run_prompt,
             ai::suggest_queries,
             arxiv::arxiv_search,
+            alphaxiv::alphaxiv_sync,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

@@ -56,6 +56,26 @@ export interface ArxivPaper {
   link: string;
 }
 
+export interface AlphaxivReport {
+  synced: number;
+  notFound: string[];
+}
+
+/** Mirror Reader's library into alphaXiv's reading-status folders (for the alphaXiv mobile app). */
+export const alphaxivSync = (papers: Paper[], key: string) => {
+  const buckets: Record<string, string[]> = { "Want to read": [], Reading: [], Completed: [] };
+  let skipped = 0;
+  for (const p of papers) {
+    if (!p.sourceKey) {
+      skipped++;
+      continue;
+    }
+    const f = p.readAt ? "Completed" : (p.readingProgress ?? 0) > 0 ? "Reading" : "Want to read";
+    buckets[f].push(p.sourceKey);
+  }
+  return invoke<AlphaxivReport>("alphaxiv_sync", { key, buckets }).then((r) => ({ ...r, skipped }));
+};
+
 export const arxivSearch = (query: string, max = 6) =>
   invoke<ArxivPaper[]>("arxiv_search", { query, max });
 

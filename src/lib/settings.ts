@@ -9,6 +9,8 @@ export interface Settings {
   indexPrompt: string;
   refsPrompt: string;
   theme: Theme;
+  /** alphaXiv API key (Settings → API Keys on alphaxiv.org); blank = sync disabled. */
+  alphaxivKey: string;
 }
 
 // `{{text}}` is replaced with the (truncated) paper text before the prompt is sent.
@@ -47,6 +49,7 @@ const DEFAULTS: Settings = {
   indexPrompt: DEFAULT_INDEX_PROMPT,
   refsPrompt: DEFAULT_REFS_PROMPT,
   theme: "minimal",
+  alphaxivKey: "",
 };
 
 export function getSettings(): Settings {

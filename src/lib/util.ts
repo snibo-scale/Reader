@@ -38,3 +38,14 @@ export function uid(): string {
   }
   return "id-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
+
+/** "today" / "3d ago" / "2mo ago" — compact relative age for an ISO date. */
+export function relativeDate(iso: string, now = Date.now()): string {
+  const days = Math.floor((now - new Date(iso).getTime()) / 86400000);
+  if (!Number.isFinite(days)) return "";
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
