@@ -1,9 +1,18 @@
-import { memo, useEffect, useRef, useState } from "react";
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { pdfjsLib } from "../lib/pdf";
 import type { Tint } from "../lib/tints";
 import type { Highlight, Rect } from "../types";
+
+// WKWebView silently breaks canvases past ~16.7M device pixels (letter page at
+// 300% on a retina display). Like pdf.js's maxCanvasPixels, render smaller than
+// that and let CSS upscale the rest.
+const MAX_CANVAS_PX = 2 ** 24;
+// Zoom (pdf.js "drawingDelay"): CSS-stretch the current bitmap at once and only
+// re-render once the scale has held still this long, so pinch-zoom is one draw
+// per gesture instead of one per wheel tick.
+const REDRAW_DELAY = 150;
 
 // Resolve a PDF link's internal destination to a page number + vertical fraction.
 // dest is either a named string or an explicit array [pageRef, {name}, ...coords].
@@ -68,12 +77,19 @@ function PdfPage({
   scrollRef,
   onJump,
 }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const linkRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [size, setSize] = useState({ w: estimateW * scale, h: estimateH * scale });
+  const pageRef = useRef<PDFPageProxy | null>(null);
+  const textLayerRef = useRef<InstanceType<typeof pdfjsLib.TextLayer> | null>(null);
+  const cancelDrawRef = useRef<(() => void) | null>(null);
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
+  const onJumpRef = useRef(onJump);
+  onJumpRef.current = onJump;
 
   // Only mount a page's heavy canvas/text layer when it's near the viewport.
   useEffect(() => {
@@ -92,69 +108,66 @@ function PdfPage({
     if (!visible) setSize({ w: estimateW * scale, h: estimateH * scale });
   }, [visible, scale, estimateW, estimateH]);
 
+  // Paint the page into a fresh canvas and swap it in only once complete, so the
+  // previous bitmap stays on screen (CSS-stretched) instead of flashing blank.
+  const draw = (page: PDFPageProxy) => {
+    cancelDrawRef.current?.();
+    const wrap = canvasWrapRef.current;
+    if (!wrap) return;
+    const viewport = page.getViewport({ scale: scaleRef.current });
+    const dpr = Math.min(window.devicePixelRatio || 1, Math.sqrt(MAX_CANVAS_PX / (viewport.width * viewport.height)));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width * dpr);
+    canvas.height = Math.floor(viewport.height * dpr);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const task = page.render({ canvasContext: ctx, viewport });
+    let done = false;
+    cancelDrawRef.current = () => {
+      if (!done) task.cancel();
+    };
+    task.promise.then(
+      () => {
+        done = true;
+        const cur = page.getViewport({ scale: scaleRef.current });
+        canvas.style.width = `${cur.width}px`;
+        canvas.style.height = `${cur.height}px`;
+        wrap.replaceChildren(canvas);
+      },
+      () => {}
+    );
+  };
+
+  // Mount: fetch the page once, draw it, and build the text + link layers. Both
+  // layers are laid out in page-relative units (%, --scale-factor), so zooming
+  // never rebuilds them.
   useEffect(() => {
     if (!visible) {
-      const c = canvasRef.current;
-      if (c) {
-        c.width = 0;
-        c.height = 0;
-      }
+      cancelDrawRef.current?.();
+      textLayerRef.current?.cancel();
+      textLayerRef.current = null;
+      pageRef.current = null;
+      canvasWrapRef.current?.replaceChildren();
       textRef.current?.replaceChildren();
       linkRef.current?.replaceChildren();
       return;
     }
     let cancelled = false;
-    let renderTask: { promise: Promise<void>; cancel?: () => void } | null = null;
-
     (async () => {
       const page = await doc.getPage(pageNumber);
       if (cancelled) return;
-      const viewport = page.getViewport({ scale });
-      const canvas = canvasRef.current;
-      const layer = textRef.current;
-      if (!canvas || !layer) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(viewport.width * dpr);
-      canvas.height = Math.floor(viewport.height * dpr);
-      canvas.style.width = `${viewport.width}px`;
-      canvas.style.height = `${viewport.height}px`;
+      pageRef.current = page;
+      const viewport = page.getViewport({ scale: scaleRef.current });
       setSize({ w: viewport.width, h: viewport.height });
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw(page);
 
-      renderTask = page.render({ canvasContext: ctx, viewport });
-      try {
-        await renderTask.promise;
-      } catch {
-        return;
-      }
-      if (cancelled) return;
-
-      const content = await page.getTextContent();
-      if (cancelled) return;
-      layer.replaceChildren();
-      layer.style.width = `${viewport.width}px`;
-      layer.style.height = `${viewport.height}px`;
-      const util = (pdfjsLib as unknown as { Util: { transform: (a: number[], b: number[]) => number[] } }).Util;
-      const targets: { span: HTMLSpanElement; width: number }[] = [];
-      for (const item of content.items) {
-        if (!("str" in item) || !item.str) continue;
-        const tx = util.transform(viewport.transform as unknown as number[], item.transform as number[]);
-        const fontHeight = Math.hypot(tx[2], tx[3]);
-        if (fontHeight === 0) continue;
-        const span = document.createElement("span");
-        span.textContent = item.str;
-        span.style.left = `${tx[4]}px`;
-        span.style.top = `${tx[5] - fontHeight}px`;
-        span.style.fontSize = `${fontHeight}px`;
-        layer.appendChild(span);
-        targets.push({ span, width: item.width * viewport.scale });
-      }
-      for (const { span, width } of targets) {
-        const actual = span.offsetWidth;
-        if (actual > 0 && width > 0) span.style.transform = `scaleX(${width / actual})`;
+      const layer = textRef.current;
+      if (layer) {
+        layer.replaceChildren();
+        const tl = new pdfjsLib.TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport });
+        textLayerRef.current = tl;
+        tl.render().catch(() => {});
       }
 
       // Link layer: make embedded PDF hyperlinks (external URLs) and GoTo
@@ -164,8 +177,6 @@ function PdfPage({
       const links = linkRef.current;
       if (!links) return;
       links.replaceChildren();
-      links.style.width = `${viewport.width}px`;
-      links.style.height = `${viewport.height}px`;
       for (const a of annots) {
         if (a.subtype !== "Link") continue;
         const url: string | undefined = a.url || a.unsafeUrl;
@@ -173,10 +184,10 @@ function PdfPage({
         const [rx1, ry1, rx2, ry2] = viewport.convertToViewportRectangle(a.rect);
         const el = document.createElement("a");
         el.className = "pdf-link";
-        el.style.left = `${Math.min(rx1, rx2)}px`;
-        el.style.top = `${Math.min(ry1, ry2)}px`;
-        el.style.width = `${Math.abs(rx2 - rx1)}px`;
-        el.style.height = `${Math.abs(ry2 - ry1)}px`;
+        el.style.left = `${(Math.min(rx1, rx2) / viewport.width) * 100}%`;
+        el.style.top = `${(Math.min(ry1, ry2) / viewport.height) * 100}%`;
+        el.style.width = `${(Math.abs(rx2 - rx1) / viewport.width) * 100}%`;
+        el.style.height = `${(Math.abs(ry2 - ry1) / viewport.height) * 100}%`;
         if (url && /^(https?:|mailto:)/i.test(url)) {
           el.href = url;
           el.title = url;
@@ -187,7 +198,7 @@ function PdfPage({
         } else if (a.dest) {
           el.onclick = (e) => {
             e.preventDefault();
-            resolveDest(doc, a.dest).then((d) => d && onJump(d.page, d.yFrac));
+            resolveDest(doc, a.dest).then((d) => d && onJumpRef.current(d.page, d.yFrac));
           };
         }
         links.appendChild(el);
@@ -196,13 +207,37 @@ function PdfPage({
 
     return () => {
       cancelled = true;
-      renderTask?.cancel?.();
+      cancelDrawRef.current?.();
+      textLayerRef.current?.cancel();
     };
-  }, [doc, pageNumber, scale, visible, onJump]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, pageNumber, visible]);
+
+  // Zoom: resize the box and CSS-stretch the current bitmap immediately, then
+  // re-render sharp after the scale settles.
+  useEffect(() => {
+    const page = pageRef.current;
+    if (!visible || !page) return;
+    const viewport = page.getViewport({ scale });
+    setSize({ w: viewport.width, h: viewport.height });
+    for (const c of Array.from(canvasWrapRef.current?.children ?? [])) {
+      (c as HTMLElement).style.width = `${viewport.width}px`;
+      (c as HTMLElement).style.height = `${viewport.height}px`;
+    }
+    textLayerRef.current?.update({ viewport });
+    const t = setTimeout(() => draw(page), REDRAW_DELAY);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scale, visible]);
 
   return (
-    <div className="pdf-page" data-page={pageNumber} ref={wrapRef} style={{ width: size.w, height: size.h }}>
-      <canvas ref={canvasRef} style={{ filter: tint.filter }} />
+    <div
+      className="pdf-page"
+      data-page={pageNumber}
+      ref={wrapRef}
+      style={{ width: size.w, height: size.h, "--scale-factor": scale } as CSSProperties}
+    >
+      <div className="canvas-layer" ref={canvasWrapRef} style={{ filter: tint.filter }} />
       {tint.overlay && <div className="tint-overlay" style={{ background: tint.overlay }} />}
       <div className="text-layer" ref={textRef} />
       <div className="link-layer" ref={linkRef} />

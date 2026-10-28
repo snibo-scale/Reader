@@ -55,7 +55,7 @@ interface SelectionState {
 function selectionTextFromGeometry(range: Range, layer: HTMLElement): string {
   type Frag = { x: number; y: number; right: number; h: number; text: string };
   const frags: Frag[] = [];
-  for (const span of Array.from(layer.querySelectorAll<HTMLSpanElement>("span"))) {
+  for (const span of Array.from(layer.querySelectorAll<HTMLSpanElement>("span:not(.markedContent)"))) {
     if (!range.intersectsNode(span)) continue;
     const sr = span.getBoundingClientRect();
     if (sr.width === 0 || sr.height === 0) continue;
